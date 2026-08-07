@@ -595,6 +595,24 @@ function switchWorkspace(id){
   toast(`Switched to “${db.ws.title}”`);
 }
 
+function renameWorkspace(id, title, question){
+  const e = wsIndex.list.find(x=>x.id===id); if(!e) return false;
+  if(id === wsIndex.activeId){
+    db.ws.title = title || db.ws.title;
+    if(question !== undefined) db.ws.question = question;
+    save();
+  } else {
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(wsKey(id))); } catch(err){}
+    if(!d) return false;
+    d.ws.title = title || d.ws.title;
+    if(question !== undefined) d.ws.question = question;
+    try { localStorage.setItem(wsKey(id), JSON.stringify(d)); } catch(err){ return false; }
+    e.title = d.ws.title; e.question = d.ws.question; writeIndex();
+  }
+  return true;
+}
+
 function deleteWorkspace(id){
   const e = wsIndex.list.find(x=>x.id===id); if(!e) return;
   if(wsIndex.list.length === 1){ toast("This is the only workspace — create another before deleting it"); return; }
@@ -1507,7 +1525,33 @@ function viewSettings(){
   return `
   <div class="view-head"><span class="view-title">Settings &amp; data</span></div>
   <div class="panel">
-    <h3>Workspace</h3>
+    <h3>Workspaces <span class="conf-note">${wsIndex.list.length} total</span></h3>
+    <p class="hint">Each workspace is a separate inquiry with its own decision question, evidence, reading library, models and runs. A new one starts completely empty. Your actors and assistant settings carry over.</p>
+    ${wsIndex.list.map(w=>{
+      const on = w.id===wsIndex.activeId;
+      return `<div class="wsrow ${on?"active":""}">
+        <div class="grow">
+          <div style="font-weight:600;">${esc(w.title)}${on?` <span class="conf-note">· open</span>`:""}</div>
+          ${w.question?`<div class="conf-note" style="margin-top:0.1rem;">${esc(w.question)}</div>`:`<div class="conf-note" style="margin-top:0.1rem;"><i>No decision question set</i></div>`}
+          <div class="conf-note" style="margin-top:0.15rem;">${w.cards||0} card${w.cards===1?"":"s"} · ${w.sources||0} source${w.sources===1?"":"s"} · updated ${esc(w.updated||"—")}</div>
+        </div>
+        <div style="display:flex; gap:0.3rem; flex-shrink:0; align-items:flex-start;">
+          ${on?"":`<button class="btn small primary" data-action="wsGo" data-id="${esc(w.id)}">Open</button>`}
+          <button class="btn small" data-action="wsRename" data-id="${esc(w.id)}">Rename</button>
+          <button class="btn small danger" data-action="wsDel" data-id="${esc(w.id)}">Delete</button>
+        </div>
+      </div>`;
+    }).join("")}
+    <div style="border-top:1px solid var(--line); margin-top:0.7rem; padding-top:0.7rem;">
+      <h4 style="font-size:0.8rem; margin:0 0 0.4rem;">Create a new workspace</h4>
+      <div class="frow"><label for="swTitle">Title</label><input type="text" id="swTitle" placeholder="e.g. Florida Flu Prediction, FY2029"></div>
+      <div class="frow"><label for="swQ">Decision question — what this workspace exists to answer</label><input type="text" id="swQ" placeholder="e.g. Should NSF fund influenza forecasting research in Florida, and which topics first?"></div>
+      <div class="frow"><label for="swCrit">Decision criteria (one per line, optional)</label><textarea id="swCrit" rows="3"></textarea></div>
+      <button class="btn primary" data-action="wsCreateSettings">Create and open</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Current workspace</h3>
     <div class="frow"><label for="setTitle">Title</label><input type="text" id="setTitle" value="${esc(db.ws.title)}"></div>
     <div class="frow"><label for="setQ">Decision question</label><input type="text" id="setQ" value="${esc(db.ws.question)}"></div>
     <div class="frow"><label for="setCrit">Decision criteria (one per line — card links to criteria are positional, so edit rather than reorder)</label><textarea id="setCrit">${esc(db.ws.criteria.join("\n"))}</textarea></div>
@@ -2017,6 +2061,24 @@ document.addEventListener("click", ev=>{
     db.models = db.models.filter(x=>x.id!==id);
     journalHuman(`Remove model ${id}${m?` (${m.name})`:""} from this workspace`, {model:id});
     save(); render(); toast("Model removed from this workspace");
+  }
+  else if(a==="wsRename"){
+    const e = wsIndex.list.find(x=>x.id===el.dataset.id); if(!e) return;
+    const t = prompt("Workspace title:", e.title);
+    if(t===null) return;
+    const q = prompt("Decision question (leave as-is to keep):", e.question||"");
+    if(renameWorkspace(el.dataset.id, t.trim()||e.title, q===null?undefined:q.trim())){ render(); toast("Workspace renamed"); }
+    else toast("Could not rename that workspace");
+  }
+  else if(a==="wsCreateSettings"){
+    const t = document.getElementById("swTitle").value.trim();
+    const q = document.getElementById("swQ").value.trim();
+    const c = document.getElementById("swCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
+    if(!t){ toast("Give the workspace a title"); return; }
+    createWorkspace(t, q, c);
+    if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+    view="board"; filters={type:"all",q:"",tag:""}; briefSel=null; render();
+    toast(`Created “${t}” — it starts empty`);
   }
   else if(a==="wsSwitcher"){ openDlg(wsSwitcherHTML()); }
   else if(a==="wsGo"){ closeDlg(); switchWorkspace(el.dataset.id); }

@@ -205,7 +205,8 @@ const PARITY_MAP = {
   // work, not the assistant's. The assistant sees exactly one workspace: the
   // open one.
   wsSwitcher: "ui-only", wsGo: "exception:governance",
-  wsCreate: "exception:governance", wsDel: "exception:destructive",
+  wsCreate: "exception:governance", wsCreateSettings: "exception:governance",
+  wsRename: "exception:governance", wsDel: "exception:destructive",
 
   // Manual run capture is a human transcription act: "I ran this elsewhere,
   // here is what it returned". Letting a model hand-write a run record it did

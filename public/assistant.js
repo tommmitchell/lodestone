@@ -183,7 +183,7 @@ const PARITY_MAP = {
   showOnBoard: "ui-only", briefToggle: "ui-only", briefAll: "ui-only",
   briefNone: "ui-only", genBrief: "ui-only",
   aSend: "ui-only", aClear: "ui-only", aToggle: "ui-only", aCtxClear: "ui-only",
-  aJustify: "ui-only", aConclude: "ui-only", aRedTeam: "ui-only",
+  aJustify: "ui-only", aConclude: "ui-only", aRedTeam: "ui-only", aPopulate: "ui-only",
   aWebToggle: "exception:governance", csGoto: "ui-only",
 
   // documented exceptions (spec section 1.2) — withheld on purpose
@@ -602,22 +602,33 @@ const ACTIONS = {
 
   add_source: {
     kind: "mutate",
-    desc: "Add a source to the reading library. Only add a source you can name accurately — never invent bibliographic detail.",
+    desc: "Add a source to the reading library — a publication, dataset, or a WEB PAGE you have actually read. Only record bibliographic detail you can see; never invent an author, date or title. For a web page always give the url, set accessed, and capture an excerpt: pages change and vanish, and the excerpt is what keeps a claim standing when the link rots.",
     schema: { type: "object", properties: {
-      kind: { type: "string", description: "report, paper, dataset, news, filing, model run" },
-      title: { type: "string" }, author: { type: "string" }, date: { type: "string" },
-      url: { type: "string" }, access: { type: "string", enum: ["open", "registration", "paywall"] },
-      notes: { type: "string" },
+      kind: { type: "string", enum: ["report", "paper", "web page", "dataset", "news", "filing", "model run"] },
+      title: { type: "string" },
+      author: { type: "string", description: "Author, or the publishing organisation for a web page" },
+      date: { type: "string", description: "Publication date, YYYY or YYYY-MM, if the source states one" },
+      url: { type: "string" },
+      access: { type: "string", enum: ["open", "registration", "paywall"] },
+      accessed: { type: "string", description: "Date you read it, YYYY-MM-DD. Required for a web page." },
+      excerpt: { type: "string", description: "The passage this source is being cited for, quoted verbatim from what you read. Required for a web page." },
+      notes: { type: "string", description: "Why this source matters to the workspace question" },
     }, required: ["kind", "title"], additionalProperties: false },
     run: (p) => {
+      if (p.kind === "web page") {
+        if (!p.url) return { error: "A web page needs its url." };
+        if (!p.excerpt) return { error: "A web page needs an excerpt: quote the passage you are citing it for, verbatim. A URL alone cannot survive the page changing." };
+      }
       const s = { id: uid("s"), kind: p.kind, title: p.title, author: p.author || "",
                   date: p.date || "", url: p.url || "", access: p.access || "open",
+                  accessed: p.accessed || (p.kind === "web page" ? today() : ""),
+                  excerpt: String(p.excerpt || "").slice(0, 1200),
                   notes: p.notes || "", addedAt: today(),
                   createdBy: (assistantActor() || {}).id };
       db.sources.push(s);
       recordOp("add_source", p, { source: s.id }, { kind: "removeSource", id: s.id },
-               `Add source ${s.id} — “${String(s.title).slice(0, 60)}”`);
-      return { created: s.id };
+               `Add ${p.kind === "web page" ? "web page" : "source"} ${s.id} — “${String(s.title).slice(0, 55)}”`);
+      return { created: s.id, note: "Cite it with the cite action, giving a locator." };
     },
   },
 
@@ -1028,6 +1039,31 @@ BUDGET FIRST: spend at most half your tool rounds reading. Batch calls.
 
 Then reply with the strongest three or four attacks, worst first, and say plainly which parts of the argument you could not shake.`;
 
+/* ---------------- Named task: Research and populate ----------------
+   For a workspace that starts empty. Needs web access on; without it the
+   assistant has nothing to read and should say so rather than invent. */
+const POPULATE_TASK = `The user wants this workspace populated by research. It may be nearly empty.
+
+BUDGET FIRST: you have a limited number of tool rounds. Batch calls. Aim for a solid core — roughly 6-10 sources and 8-15 cards — not exhaustive coverage. Depth beats breadth on a first pass.
+
+1. get_workspace. The decision question and criteria are your brief; everything you gather must bear on them.
+2. Search the web for the evidence that question needs: the authoritative data, the main quantitative claims, the contested points, and the policy or market context. Prefer primary sources - statistical agencies, peer-reviewed work, official filings - over commentary about them.
+3. For each source worth keeping, add_source with kind "web page" (or paper/report/dataset if that is what it is), its url, accessed, and an EXCERPT quoted verbatim from what you actually read. The excerpt is not optional: it is what keeps a claim standing when the page changes.
+4. Turn the evidence into cards, and cite every one with a locator:
+   - fact for what is established, with the number in the statement;
+   - opportunity where there is a tractable opening;
+   - risk for what could go wrong or undermine the case;
+   - tradeoff where two goods genuinely conflict;
+   - open_question for what you could not settle - these are as valuable as the facts.
+5. Grade confidence honestly: "established" needs multiple independent sources, a single source is at most "probable", an active disagreement between sources is "contested". Most of a first pass should be "probable".
+6. Link the cards: supports, conflicts-with, informs, depends-on. An unconnected pile of facts is not an argument. Where two sources disagree, record BOTH and link them conflicts-with rather than picking a winner.
+7. Set criteria on cards that bear on a decision criterion, and leave it empty where they do not.
+8. Never invent a source, a number, a url or an excerpt. If the web gave you nothing usable on a point, make it an open_question and say so.
+
+If web access is off, do not guess from memory — say you need it switched on and stop.
+
+Then reply with what you built: how many sources and cards, what the evidence seems to say so far, and the biggest gaps you could not fill.`;
+
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal
 // tool folding all its parameters into the first one as pseudo-XML). Strip
@@ -1110,7 +1146,8 @@ function renderAssistant() {
       <textarea id="aInput" placeholder="Ask, or instruct… (Enter to send, Shift+Enter for a new line)" ${aBusy ? "disabled" : ""}></textarea>
       <div style="display:flex;gap:0.4rem;margin-top:0.4rem;align-items:center;">
         <button class="btn primary small" data-action="aSend" ${aBusy ? "disabled" : ""}>Send</button>
-        <button class="btn small" data-action="aRedTeam" ${aBusy ? "disabled" : ""} title="Adversarial pass over the board — runs on whichever model you have chosen">Red-team</button>
+        <button class="btn small" data-action="aPopulate" ${aBusy ? "disabled" : ""} title="Research the decision question on the web and populate the library and board">Populate</button>
+      <button class="btn small" data-action="aRedTeam" ${aBusy ? "disabled" : ""} title="Adversarial pass over the board — runs on whichever model you have chosen">Red-team</button>
         <button class="btn small" data-action="aConclude" ${aBusy ? "disabled" : ""} title="Form a recommendation for the decision question and justify it">Conclude</button>
       </div>
     </div>`;
@@ -1153,6 +1190,11 @@ document.addEventListener("click", (ev) => {
   else if (a === "aWebToggle") {
     db.settings.webTools = !db.settings.webTools; save(); render();
     toast(db.settings.webTools ? "Web access on — page content is untrusted data" : "Web access off");
+  }
+  else if (a === "aPopulate") {
+    if (!(db.settings && db.settings.webTools)) { toast("Turn web access on first — otherwise there is nothing to research from"); return; }
+    aOpen = true; render();
+    aSend("Research this workspace's decision question and populate the library and board.", POPULATE_TASK);
   }
   else if (a === "aRedTeam") { aOpen = true; render(); aSend("Red-team this workspace's evidence.", REDTEAM_TASK); }
   else if (a === "aConclude") {

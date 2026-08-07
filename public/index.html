@@ -942,7 +942,8 @@ function sourceHTML(sid){
   <div class="dlg-head"><span>Source — ${esc(s.author||s.title)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
   <div class="dlg-body">
     <h3 style="margin:0 0 0.3rem; font-size:1rem;">${esc(s.title)}</h3>
-    <div class="conf-note">${esc(s.author)} · ${esc(s.date)} · ${esc(s.kind)} · access: ${esc(s.access)}${stale?` · <span class="tflag">over 13 months old — check for a newer edition</span>`:""}</div>
+    <div class="conf-note">${esc(s.author)} · ${esc(s.date)} · ${esc(s.kind)} · access: ${esc(s.access)}${s.accessed?` · read ${esc(s.accessed)}`:""}${stale?` · <span class="tflag">${s.kind==="web page"?"read over 13 months ago — re-check the page":"over 13 months old — check for a newer edition"}</span>`:""}</div>
+    ${s.excerpt?`<div class="notice" style="margin:0.5rem 0;"><b>Excerpt captured at ingest:</b><br><i>${esc(s.excerpt)}</i></div>`:""}
     ${s.notes?`<p style="margin:0.7rem 0 0; font-size:0.85rem;">${esc(s.notes)}</p>`:""}
     ${s.url?`<p style="margin:0.7rem 0 0;"><a href="${esc(s.url)}" target="_blank" rel="noopener">Open the document in a new window ↗</a>${s.access!=="open"?` <span class="conf-note">(${esc(s.access)} — you may hit a login wall)</span>`:""}</p>`
           :`<p class="conf-note" style="margin:0.7rem 0 0;">No URL recorded for this source.</p>`}
@@ -1736,10 +1737,14 @@ function sourceForm(existing){
       <span style="flex:1;"><label for="sf-date">Date (YYYY or YYYY-MM)</label><input type="text" id="sf-date" value="${esc(s.date)}"></span>
     </div>
     <div class="frow inline">
-      <span style="flex:1;"><label for="sf-kind">Kind</label><select id="sf-kind">${["report","paper","dataset","news","filing","web-tool capture","model run"].map(k=>`<option ${s.kind===k?"selected":""}>${k}</option>`).join("")}</select></span>
+      <span style="flex:1;"><label for="sf-kind">Kind</label><select id="sf-kind">${["report","paper","web page","dataset","news","filing","web-tool capture","model run"].map(k=>`<option ${s.kind===k?"selected":""}>${k}</option>`).join("")}</select></span>
       <span style="flex:1;"><label for="sf-access">Access</label><select id="sf-access">${["open","registration","paywall"].map(k=>`<option ${s.access===k?"selected":""}>${k}</option>`).join("")}</select></span>
     </div>
     <div class="frow"><label for="sf-url">URL / DOI</label><input type="url" id="sf-url" value="${esc(s.url)}"></div>
+    <div class="frow" style="display:flex; gap:0.6rem;">
+      <span style="flex:1;"><label for="sf-accessed">Accessed (YYYY-MM-DD)</label><input type="text" id="sf-accessed" value="${esc(s.accessed||"")}" placeholder="${esc(today())}"></span>
+    </div>
+    <div class="frow"><label for="sf-excerpt">Excerpt captured at ingest — the passage this source is being cited for. A page can change or vanish; the excerpt is what keeps the claim standing.</label><textarea id="sf-excerpt" rows="3">${esc(s.excerpt||"")}</textarea></div>
     <div class="frow"><label for="sf-notes">Notes / freshness policy / key excerpt</label><textarea id="sf-notes">${esc(s.notes)}</textarea></div>
   </div>
   <div class="dlg-foot"><button class="btn" data-action="closeDlg">Cancel</button>

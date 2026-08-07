@@ -196,6 +196,14 @@ const PARITY_MAP = {
   delSource: "exception:destructive", delRun: "exception:destructive",
   delList: "exception:destructive",
 
+  // Workspace lifecycle is container-level, like import and reset. Switching
+  // under a running conversation would invalidate every id the assistant has
+  // read; creating and deleting whole inquiries is the user's framing of the
+  // work, not the assistant's. The assistant sees exactly one workspace: the
+  // open one.
+  wsSwitcher: "ui-only", wsGo: "exception:governance",
+  wsCreate: "exception:governance", wsDel: "exception:destructive",
+
   // Manual run capture is a human transcription act: "I ran this elsewhere,
   // here is what it returned". Letting a model hand-write a run record it did
   // not execute is precisely the fabrication run_model exists to prevent.
@@ -813,8 +821,14 @@ async function aSend(prepared, task) {
   // Context chip: the assistant knows what the user is looking at, so
   // "justify this card" needs no ID typed.
   let userText = q;
-  if (aCtx && aCtx.kind === "card" && card(aCtx.id)) userText = `[The user is currently looking at card ${aCtx.id}.]\n${q}`;
-  else if (aCtx && aCtx.kind === "model") userText = `[The user is currently looking at model ${aCtx.id}.]\n${q}`;
+  // Ambient context: the workspace's own question frames every request, and is
+  // far too cheap to make the model spend a tool round fetching.
+  const frame = `[Workspace: "${db.ws.title}". Decision question: ${db.ws.question || "(none set)"}]`;
+  let hint = "";
+  if (aCtx && aCtx.kind === "card" && card(aCtx.id)) hint = `\n[The user is currently looking at card ${aCtx.id}.]`;
+  else if (aCtx && aCtx.kind === "model") hint = `\n[The user is currently looking at model ${aCtx.id}.]`;
+  // Only on the first turn of a conversation; later turns already have it.
+  userText = (aConv.length === 0 ? frame + hint + "\n" : (hint ? hint + "\n" : "")) + q;
 
   // A turn owns one changeset. Any earlier un-reviewed one is committed to the
   // journal first rather than being silently extended by unrelated work.
@@ -941,6 +955,15 @@ BUDGET FIRST: you have a limited number of tool rounds. Spend at most half readi
 7. Never invent an id, a source, or a locator.
 
 Then reply with: the conclusion, the confidence you gave it and why, what would change it, and which criteria it does not yet meet.`;
+
+/* A conversation is about one workspace's evidence. Carrying it across a
+   switch would leave the assistant reasoning from card ids that no longer
+   exist, so the switch resets it — and any unreviewed changeset goes with the
+   workspace it was made in, since it is stored there. */
+function aResetForWorkspace() {
+  aChat = []; aConv = []; aCtx = null;
+  loadChangeset();
+}
 
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal

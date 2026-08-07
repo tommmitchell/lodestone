@@ -78,6 +78,14 @@
           align-items:flex-start; border-bottom:1px solid #f0e7d8; }
   .csop:hover { background:#fff3dd; }
   .csbtns { padding:0.45rem 0.6rem; display:flex; gap:0.4rem; flex-wrap:wrap; }
+  .ws-title { background:none; border:1px solid transparent; font:inherit; font-size:0.85rem;
+              color:inherit; cursor:pointer; padding:0.15rem 0.45rem; border-radius:6px; }
+  .ws-title:hover { border-color:var(--line); background:var(--paper); }
+  .ws-caret { color:var(--ink-3); font-size:0.75rem; }
+  .wsrow { display:flex; gap:0.6rem; align-items:flex-start; padding:0.5rem 0.6rem;
+           border:1px solid var(--line); border-radius:7px; margin-bottom:0.4rem; }
+  .wsrow.active { border-color:var(--cobalt); background:var(--paper); }
+  .wsrow .grow { flex:1; min-width:0; }
   .actor-chip { display:inline-block; font-size:0.62rem; padding:0.02rem 0.3rem; border-radius:3px;
                 background:var(--paper); border:1px solid var(--line); color:var(--ink-3); }
   @media (max-width: 1100px) { .layout.with-assistant { grid-template-columns: 12.5rem 1fr; }
@@ -204,7 +212,7 @@
 
 <div class="topbar">
   <span class="logo">◆ LODESTONE</span>
-  <span class="ws-title" id="wsTitle"></span>
+  <button class="ws-title" id="wsTitle" data-action="wsSwitcher" title="Switch or create a workspace"></button>
   <span class="proto-badge">P1 Prototype</span>
 </div>
 <div class="layout" id="layout">
@@ -466,21 +474,120 @@ let view = "board";
 let filters = { type:"all", q:"", tag:"" };
 let briefSel = null; // Set of card ids, lazily initialized
 
-function load(){
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      db = JSON.parse(raw);
-      const n = applySeedAdditions(db);
-      if (n) { save(); setTimeout(()=>toast(`${n} new seeded item(s) added to this workspace`), 400); }
-      return;
-    }
-  } catch(e) {}
-  db = seedData();
-  save();
+/* ---------------- Multiple workspaces ----------------
+   Each workspace is a separate store, so only the active one is held in
+   memory and localStorage quota is not spent on inquiries you are not
+   looking at. A small index carries just enough to render the switcher.
+
+   Deliberately per-workspace: cards, sources, lists, runs, journal, the
+   decision question, and the model registry — a workspace exports and imports
+   as a self-contained unit. Actors and settings are COPIED into a new
+   workspace from the current one, so your identity and assistant preferences
+   follow you without becoming shared mutable state. */
+const IDX_KEY = "lodestone-index";
+const wsKey = id => "lodestone-ws-" + id;
+
+let wsIndex = { activeId: null, list: [] };   // {id,title,question,updated,cards,sources}
+
+function readIndex(){
+  try { const raw = localStorage.getItem(IDX_KEY); if(raw) return JSON.parse(raw); } catch(e){}
+  return null;
 }
-function save(){
-  try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch(e) { toast("Warning: could not persist (storage unavailable)"); }
+function writeIndex(){
+  try { localStorage.setItem(IDX_KEY, JSON.stringify(wsIndex)); } catch(e){}
+}
+function touchIndex(){
+  const e = wsIndex.list.find(x=>x.id===wsIndex.activeId);
+  if(e){
+    e.title = db.ws.title; e.question = db.ws.question;
+    e.updated = today();
+    e.cards = db.cards.filter(c=>c.status!=="deprecated").length;
+    e.sources = db.sources.length;
+  }
+  writeIndex();
+}
+
+function load(){
+  wsIndex = readIndex() || { activeId: null, list: [] };
+
+  // One-time migration from the single-workspace store. The old key is left
+  // in place rather than deleted, so a mistake here is recoverable.
+  if(!wsIndex.list.length){
+    let legacy = null;
+    try { const raw = localStorage.getItem(LS_KEY); if(raw) legacy = JSON.parse(raw); } catch(e){}
+    const id = "w1";
+    db = legacy || seedData();
+    applySeedAdditions(db);
+    wsIndex = { activeId: id, list: [{ id, title: db.ws.title, question: db.ws.question,
+      updated: today(), cards: db.cards.length, sources: db.sources.length }] };
+    saveWorkspace(); writeIndex();
+    return;
+  }
+
+  const id = wsIndex.activeId || wsIndex.list[0].id;
+  wsIndex.activeId = id;
+  try { db = JSON.parse(localStorage.getItem(wsKey(id))); } catch(e){ db = null; }
+  if(!db){ db = seedData(); }
+  const n = applySeedAdditions(db);
+  if (n) { saveWorkspace(); setTimeout(()=>toast(`${n} new seeded item(s) added to this workspace`), 400); }
+  touchIndex();
+}
+
+function saveWorkspace(){
+  try { localStorage.setItem(wsKey(wsIndex.activeId), JSON.stringify(db)); }
+  catch(e) { toast("Warning: could not persist (storage full or unavailable)"); }
+}
+function save(){ saveWorkspace(); touchIndex(); }
+
+/* A new workspace starts empty of evidence but fully equipped: the model
+   registry is present, and your actors and preferences carry over. */
+function blankWorkspace(title, question, criteria){
+  const d = seedData();                       // models + all migrations applied
+  d.cards = []; d.sources = []; d.lists = []; d.runs = []; d.journal = [];
+  d.pendingChangeset = null; d.seq = 100;
+  d.ws = { title: title || "Untitled workspace", question: question || "", criteria: criteria || [] };
+  if(db && db.actors)   d.actors   = JSON.parse(JSON.stringify(db.actors));
+  if(db && db.settings) d.settings = JSON.parse(JSON.stringify(db.settings));
+  return d;
+}
+
+function createWorkspace(title, question, criteria){
+  if(db) save();                              // never lose the one we are leaving
+  const id = "w" + (Date.now().toString(36));
+  db = blankWorkspace(title, question, criteria);
+  wsIndex.list.push({ id, title: db.ws.title, question: db.ws.question, updated: today(), cards: 0, sources: 0 });
+  wsIndex.activeId = id;
+  saveWorkspace(); writeIndex();
+  return id;
+}
+
+function switchWorkspace(id){
+  if(id === wsIndex.activeId) return;
+  if(!wsIndex.list.some(x=>x.id===id)) return;
+  save();                                     // flush the outgoing workspace
+  let next = null;
+  try { next = JSON.parse(localStorage.getItem(wsKey(id))); } catch(e){}
+  if(!next){ toast("That workspace could not be read"); return; }
+  db = next;
+  wsIndex.activeId = id;
+  applySeedAdditions(db);
+  // The assistant's conversation belongs to the workspace it was held in.
+  if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+  saveWorkspace(); writeIndex();
+  view = "board"; filters = { type:"all", q:"", tag:"" }; briefSel = null;
+  render();
+  toast(`Switched to “${db.ws.title}”`);
+}
+
+function deleteWorkspace(id){
+  const e = wsIndex.list.find(x=>x.id===id); if(!e) return;
+  if(wsIndex.list.length === 1){ toast("This is the only workspace — create another before deleting it"); return; }
+  if(!confirm(`Delete the workspace “${e.title}” and everything in it? Export it first if you may want it back.`)) return;
+  try { localStorage.removeItem(wsKey(id)); } catch(err){}
+  wsIndex.list = wsIndex.list.filter(x=>x.id!==id);
+  if(wsIndex.activeId === id){ wsIndex.activeId = wsIndex.list[0].id; writeIndex(); load(); render(); }
+  else writeIndex();
+  toast("Workspace deleted");
 }
 function uid(prefix){ db.seq += 1; return prefix + "-" + db.seq; }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -1032,7 +1139,7 @@ function traceBack(){
 
 /* ---------------- Rendering ---------------- */
 function render(){
-  document.getElementById("wsTitle").textContent = "Workspace: " + db.ws.title;
+  document.getElementById("wsTitle").innerHTML = "Workspace: " + esc(db.ws.title) + `<span class="ws-caret"> ▾ ${wsIndex.list.length>1?wsIndex.list.length:""}</span>`;
   renderRail();
   const main = document.getElementById("main");
   if(view==="board") main.innerHTML = viewBoard();
@@ -1403,6 +1510,37 @@ function viewSettings(){
   <div class="panel">
     <h3>About this prototype</h3>
     <p class="hint">LODESTONE P1 prototype implementing the evidence core of the specification: typed cards with confidence/citations/links (FR-C1–C5), reading library and lists (FR-L1/L3, manual ingest), deterministic analyst audits (FR-A4), model registry with guided-manual run capture (FR-M fallback), and memo/bibliography/JSON export (FR-S1/S3). Not implemented here (backend required): LLM assistant, live web ingest, Tier-2/3 model execution, multi-user, audit log. Seeded with evidence from the July 2026 battery-recycling analysis.</p>
+  </div>`;
+}
+
+
+/* ---------------- Workspace switcher ---------------- */
+function wsSwitcherHTML(){
+  const rows = wsIndex.list.map(w=>{
+    const on = w.id===wsIndex.activeId;
+    return `<div class="wsrow ${on?"active":""}">
+      <div class="grow">
+        <div style="font-weight:600;">${esc(w.title)}${on?` <span class="conf-note">· current</span>`:""}</div>
+        ${w.question?`<div class="conf-note" style="margin-top:0.1rem;">${esc(w.question)}</div>`:`<div class="conf-note" style="margin-top:0.1rem;"><i>No decision question set</i></div>`}
+        <div class="conf-note" style="margin-top:0.15rem;">${w.cards||0} card${w.cards===1?"":"s"} · ${w.sources||0} source${w.sources===1?"":"s"} · updated ${esc(w.updated||"—")}</div>
+      </div>
+      <div style="display:flex; gap:0.3rem; flex-shrink:0;">
+        ${on?"":`<button class="btn small primary" data-action="wsGo" data-id="${esc(w.id)}">Open</button>`}
+        <button class="btn small danger" data-action="wsDel" data-id="${esc(w.id)}">Delete</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="dlg-head"><span>Workspaces</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <p class="hint">Each workspace is a separate inquiry with its own decision question, evidence, library and model runs. Your actors and assistant settings carry over into new ones.</p>
+    ${rows}
+    <div class="panel" style="margin-top:0.8rem;">
+      <h3>New workspace</h3>
+      <div class="frow"><label for="nwTitle">Title</label><input type="text" id="nwTitle" placeholder="e.g. Grid Storage Manufacturing, FY2029"></div>
+      <div class="frow"><label for="nwQ">Decision question — what this workspace exists to answer</label><input type="text" id="nwQ" placeholder="e.g. Should NSF fund long-duration storage manufacturing research, and which topics first?"></div>
+      <div class="frow"><label for="nwCrit">Decision criteria (one per line, optional)</label><textarea id="nwCrit" rows="3"></textarea></div>
+      <button class="btn primary" data-action="wsCreate">Create and open</button>
+    </div>
   </div>`;
 }
 
@@ -1831,6 +1969,19 @@ document.addEventListener("click", ev=>{
     db.ws.criteria = document.getElementById("setCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
     save(); render(); toast("Workspace settings saved");
   }
+  else if(a==="wsSwitcher"){ openDlg(wsSwitcherHTML()); }
+  else if(a==="wsGo"){ closeDlg(); switchWorkspace(el.dataset.id); }
+  else if(a==="wsDel"){ deleteWorkspace(el.dataset.id); if(dlg.open) openDlg(wsSwitcherHTML()); }
+  else if(a==="wsCreate"){
+    const t = document.getElementById("nwTitle").value.trim();
+    const q = document.getElementById("nwQ").value.trim();
+    const c = document.getElementById("nwCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
+    if(!t){ toast("Give the workspace a title"); return; }
+    createWorkspace(t, q, c);
+    if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+    closeDlg(); view="board"; filters={type:"all",q:"",tag:""}; briefSel=null; render();
+    toast(`Created “${t}” — it starts empty; add cards or ask the assistant`);
+  }
   else if(a==="saveAsst"){
     const rounds = Math.max(1, Math.min(16, Number(document.getElementById("setRounds").value) || 8));
     db.settings.activeActor = document.getElementById("setActor").value;
@@ -1860,7 +2011,16 @@ document.addEventListener("change", ev=>{
       try {
         const data = JSON.parse(reader.result);
         if(!data.cards || !data.sources || !data.ws) throw new Error("not a LODESTONE workspace");
-        db = data; save(); briefSel=null; render(); toast("Workspace imported");
+        // Import into a NEW workspace rather than overwriting the open one — the
+        // destructive version was easy to trigger by accident.
+        const t = (data.ws && data.ws.title) || "Imported workspace";
+        const id = "w" + (Date.now().toString(36));
+        if(db) save();
+        db = data; wsIndex.list.push({ id, title:t, question:(data.ws&&data.ws.question)||"",
+          updated: today(), cards:(data.cards||[]).length, sources:(data.sources||[]).length });
+        wsIndex.activeId = id; applySeedAdditions(db); saveWorkspace(); writeIndex();
+        if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+        briefSel=null; view="board"; render(); toast(`Imported as a new workspace: “${t}”`);
       } catch(e){ toast("Import failed: " + e.message); }
     };
     reader.readAsText(f);

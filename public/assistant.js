@@ -65,7 +65,17 @@ function cardFull(c) {
    ops land unflagged and the journal keeps inverses for Revert. Either way
    the inverse is computed at execution time, when the prior state is known.
    ========================================================================= */
-let aChangeset = null;    // the changeset being built by the current turn
+/* The changeset must be as durable as the edits it governs. Holding it only in
+   memory meant a reload left the mutations applied but unreviewable — pending
+   badges gone, drawer gone, nothing journaled — which silently defeated the
+   whole staged-approval design. It now lives in db alongside the workspace. */
+let aChangeset = null;    // mirror of db.pendingChangeset for the current turn
+
+function loadChangeset() {
+  aChangeset = (db.pendingChangeset && db.pendingChangeset.status === "staged" && (db.pendingChangeset.ops || []).length)
+    ? db.pendingChangeset : null;
+}
+function persistChangeset() { db.pendingChangeset = aChangeset; save(); }
 
 function newChangeset(task) {
   return { id: uid("cs"), task: task || "assistant edits", actor: (assistantActor() || {}).id || null,
@@ -83,7 +93,7 @@ function recordOp(action, params, targets, inverse, describe) {
   const staged = (db.settings.approvalMode || "staged") === "staged";
   aChangeset.ops.push({ action, params, targets, inverse, describe,
                         status: staged ? "pending" : "applied" });
-  save();
+  persistChangeset();
 }
 
 function applyInverse(op) {
@@ -118,7 +128,7 @@ function csAccept(indices) {
   if (!db.journal) db.journal = [];
   db.journal.unshift(aChangeset);
   db.journal = db.journal.slice(0, 50);
-  aChangeset = null;
+  aChangeset = null; db.pendingChangeset = null;
   save(); render();
   toast(`${n} change${n === 1 ? "" : "s"} accepted`);
 }
@@ -133,7 +143,7 @@ function csReject() {
   if (!db.journal) db.journal = [];
   db.journal.unshift(aChangeset);
   db.journal = db.journal.slice(0, 50);
-  aChangeset = null;
+  aChangeset = null; db.pendingChangeset = null;
   save(); render();
   toast("Changes rejected and undone");
 }
@@ -810,6 +820,7 @@ async function aSend(prepared, task) {
   // journal first rather than being silently extended by unrelated work.
   if (aChangeset && aChangeset.ops.length) csAccept([]);
   aChangeset = newChangeset(q.slice(0, 60));
+  persistChangeset();
 
   aConv.push({ role: "user", content: userText });
   aChat.push({ role: "user", text: q });
@@ -861,7 +872,7 @@ async function aSend(prepared, task) {
     entry.error = true;
   }
   aBusy = false;
-  if (aChangeset && !aChangeset.ops.length) aChangeset = null;   // nothing to review
+  if (aChangeset && !aChangeset.ops.length) { aChangeset = null; db.pendingChangeset = null; save(); }
   render();
   const el = document.getElementById("aInput");
   if (el) el.focus();
@@ -1068,5 +1079,6 @@ document.addEventListener("keydown", (ev) => {
    render, so renderAssistant did not exist yet at that point. Re-render now
    that it does — this is what brings up the rail and the per-card ⚡ Ask
    buttons on load. */
+loadChangeset();
 scanUiActions();
 render();

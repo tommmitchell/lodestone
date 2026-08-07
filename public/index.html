@@ -1,0 +1,1617 @@
+<title>LODESTONE — Evidence Workbench (Prototype)</title>
+<style>
+  :root {
+    --paper:#f6f7f8; --card:#ffffff; --ink:#1b2129; --ink-2:#4a545f; --ink-3:#6e7883;
+    --line:#d8dde2; --cobalt:#2c55a8; --cobalt-soft:#e8eef8; --copper:#a05a2c; --copper-soft:#f5ece3;
+    --good:#2e6b4f; --good-soft:#e4f0ea; --danger:#a03a3a; --danger-soft:#f6e7e7;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#14181d; --card:#1c2128; --ink:#e6e9ec; --ink-2:#aeb6bf; --ink-3:#8a929b;
+      --line:#333b44; --cobalt:#7da3e8; --cobalt-soft:#21304a; --copper:#d08d5c; --copper-soft:#33281e;
+      --good:#6fbb96; --good-soft:#1e3229; --danger:#d98a8a; --danger-soft:#3a2424; }
+  }
+  :root[data-theme="dark"] { --paper:#14181d; --card:#1c2128; --ink:#e6e9ec; --ink-2:#aeb6bf; --ink-3:#8a929b;
+    --line:#333b44; --cobalt:#7da3e8; --cobalt-soft:#21304a; --copper:#d08d5c; --copper-soft:#33281e;
+    --good:#6fbb96; --good-soft:#1e3229; --danger:#d98a8a; --danger-soft:#3a2424; }
+  :root[data-theme="light"] { --paper:#f6f7f8; --card:#ffffff; --ink:#1b2129; --ink-2:#4a545f; --ink-3:#6e7883;
+    --line:#d8dde2; --cobalt:#2c55a8; --cobalt-soft:#e8eef8; --copper:#a05a2c; --copper-soft:#f5ece3;
+    --good:#2e6b4f; --good-soft:#e4f0ea; --danger:#a03a3a; --danger-soft:#f6e7e7; }
+
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin:0; font-family:var(--sans); color:var(--ink); background:var(--paper); font-size:14px; line-height:1.5; }
+  button { font-family:var(--sans); cursor:pointer; }
+  input, select, textarea { font-family:var(--sans); font-size:0.85rem; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:0.4rem 0.6rem; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline:2px solid var(--cobalt); outline-offset:1px; }
+  a { color: var(--cobalt); }
+
+  .topbar { display:flex; align-items:center; gap:1rem; padding:0.6rem 1.1rem; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:20; }
+  .logo { font-weight:800; letter-spacing:0.08em; color:var(--cobalt); font-size:0.85rem; white-space:nowrap; }
+  .ws-title { font-size:0.85rem; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .proto-badge { font-size:0.62rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--copper); border:1px solid var(--copper); border-radius:4px; padding:0.1rem 0.45rem; white-space:nowrap; }
+
+  .layout { display:grid; grid-template-columns: 12.5rem 1fr; min-height: calc(100vh - 45px); }
+  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .rail { display:flex; flex-wrap:wrap; border-right:none !important; border-bottom:1px solid var(--line); padding:0.4rem !important; } .rail .nav-head{display:none;} .rail .nav-item{border-radius:6px; border-right:none !important;} }
+  .rail { border-right:1px solid var(--line); padding:0.9rem 0; background:var(--card); }
+  .nav-item { display:flex; justify-content:space-between; gap:0.5rem; width:100%; text-align:left; background:none; border:none; color:var(--ink-2); font-size:0.82rem; padding:0.4rem 1.1rem; }
+  .nav-item:hover { color:var(--cobalt); }
+  .nav-item.active { background:var(--cobalt-soft); color:var(--cobalt); font-weight:700; border-right:2px solid var(--cobalt); }
+  .nav-count { color:var(--ink-3); font-weight:400; font-variant-numeric:tabular-nums; }
+  .nav-head { font-size:0.62rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-3); padding:1rem 1.1rem 0.3rem; font-weight:700; }
+  .nav-alert { color: var(--copper); }
+
+  .main { padding:1.1rem 1.4rem 3rem; max-width:62rem; }
+  .view-head { display:flex; align-items:center; justify-content:space-between; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.9rem; }
+  .view-title { font-size:1.05rem; font-weight:700; }
+  .view-sub { font-size:0.78rem; color:var(--ink-3); margin:-0.5rem 0 0.9rem; max-width:46rem; }
+
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink-2); border-radius:6px; padding:0.35rem 0.75rem; font-size:0.78rem; font-weight:600; }
+  .btn:hover { border-color:var(--cobalt); color:var(--cobalt); }
+  .btn.primary { background:var(--cobalt); border-color:var(--cobalt); color:var(--paper); }
+  .btn.primary:hover { opacity:0.9; color:var(--paper); }
+  .btn.danger { color:var(--danger); }
+  .btn.small { padding:0.15rem 0.5rem; font-size:0.7rem; }
+
+  .chips { display:flex; gap:0.35rem; flex-wrap:wrap; }
+  .chip { font-size:0.7rem; border:1px solid var(--line); background:var(--card); border-radius:999px; padding:0.18rem 0.65rem; color:var(--ink-2); }
+  .chip.on { background:var(--cobalt); border-color:var(--cobalt); color:var(--paper); }
+
+  .card-item { border:1px solid var(--line); border-radius:8px; padding:0.75rem 0.95rem; margin-bottom:0.7rem; background:var(--card); }
+  .card-top { display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem; flex-wrap:wrap; }
+  .ctype { font-size:0.6rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; border-radius:4px; padding:0.14rem 0.5rem; }
+  .ctype.fact { background:var(--cobalt-soft); color:var(--cobalt); }
+  .ctype.opportunity { background:var(--good-soft); color:var(--good); }
+  .ctype.tradeoff, .ctype.risk { background:var(--copper-soft); color:var(--copper); }
+  .ctype.open_question, .ctype.assumption { background:var(--paper); color:var(--ink-2); border:1px dashed var(--ink-3); }
+  .ctype.recommendation, .ctype.decision { background:var(--cobalt); color:var(--paper); }
+  .ccode { font-family:var(--mono); font-size:0.68rem; color:var(--ink-3); }
+  .conf-note { font-size:0.68rem; color:var(--ink-3); }
+  .conf-note b { color:var(--ink-2); }
+  .badge { font-size:0.62rem; font-weight:700; border-radius:4px; padding:0.1rem 0.4rem; }
+  .badge.conflict { background:var(--danger-soft); color:var(--danger); }
+  .badge.unsourced { background:var(--copper-soft); color:var(--copper); }
+  .badge.runs { background:var(--good-soft); color:var(--good); }
+  .badge.needs { background:var(--copper-soft); color:var(--copper); }
+  .badge.manual { background:var(--paper); color:var(--ink-3); border:1px solid var(--line); }
+  tr.run-hi > td { background:var(--cobalt-soft); transition:background 0.6s; }
+  .card-body { font-size:0.86rem; line-height:1.45; }
+  .card-detail { font-size:0.78rem; color:var(--ink-2); margin-top:0.3rem; }
+  .card-meta { font-size:0.68rem; color:var(--ink-3); margin-top:0.45rem; display:flex; gap:0.9rem; flex-wrap:wrap; align-items:center; }
+  .card-meta .src { color:var(--cobalt); }
+  .tagpill { font-size:0.64rem; background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:0.05rem 0.45rem; color:var(--ink-3); }
+
+  table.grid { border-collapse:collapse; width:100%; font-size:0.8rem; background:var(--card); }
+  .gridwrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; margin-bottom:1rem; }
+  table.grid th { text-align:left; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-3); padding:0.55rem 0.75rem; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.grid td { padding:0.5rem 0.75rem; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink-2); }
+  table.grid tr:last-child td { border-bottom:none; }
+
+  .panel { border:1px solid var(--line); border-radius:8px; background:var(--card); padding:0.9rem 1.1rem; margin-bottom:1rem; }
+  .panel h3 { margin:0 0 0.5rem; font-size:0.85rem; }
+  .panel .hint { font-size:0.74rem; color:var(--ink-3); }
+  .notice { border-left:3px solid var(--copper); background:var(--copper-soft); border-radius:0 6px 6px 0; padding:0.6rem 0.9rem; font-size:0.78rem; color:var(--ink-2); margin-bottom:1rem; }
+
+  dialog { border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); padding:0; max-width:38rem; width:92vw; max-height:88vh; }
+  dialog::backdrop { background:rgba(0,0,0,0.35); }
+  .dlg-head { display:flex; justify-content:space-between; align-items:center; padding:0.8rem 1.1rem; border-bottom:1px solid var(--line); font-weight:700; font-size:0.9rem; }
+  .dlg-body { padding:1rem 1.1rem; overflow-y:auto; max-height:calc(88vh - 7rem); }
+  .dlg-foot { display:flex; justify-content:flex-end; gap:0.5rem; padding:0.7rem 1.1rem; border-top:1px solid var(--line); }
+  .frow { margin-bottom:0.7rem; }
+  .frow label { display:block; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-3); font-weight:700; margin-bottom:0.2rem; }
+  .frow input[type=text], .frow input[type=url], .frow input[type=date], .frow select, .frow textarea { width:100%; }
+  .frow textarea { min-height:4rem; resize:vertical; }
+  .frow .inline { display:flex; gap:0.5rem; }
+  .charcount { font-size:0.65rem; color:var(--ink-3); text-align:right; }
+  .subitem { display:flex; justify-content:space-between; align-items:center; gap:0.5rem; font-size:0.75rem; background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:0.3rem 0.6rem; margin-bottom:0.3rem; }
+
+  .toast { position:fixed; bottom:1.2rem; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); font-size:0.78rem; padding:0.5rem 1rem; border-radius:6px; z-index:100; opacity:0; transition:opacity 0.2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  .searchbox { min-width:12rem; flex:1; max-width:20rem; }
+  .empty { color:var(--ink-3); font-size:0.8rem; padding:1rem 0; }
+  .memo-preview { font-family:var(--mono); font-size:0.72rem; white-space:pre-wrap; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:1rem; max-height:24rem; overflow:auto; }
+  .criteria-cov { display:flex; align-items:center; gap:0.6rem; margin-bottom:0.4rem; font-size:0.8rem; }
+  .covbar { flex:1; height:6px; background:var(--paper); border:1px solid var(--line); border-radius:3px; overflow:hidden; }
+  .covbar > div { height:100%; background:var(--cobalt); }
+  .hit { border-left:3px solid var(--cobalt); padding:0.4rem 0.8rem; margin-bottom:0.5rem; background:var(--cobalt-soft); border-radius:0 6px 6px 0; font-size:0.8rem; }
+  .hit .where { font-size:0.65rem; color:var(--ink-3); text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+  mark { background:var(--copper-soft); color:var(--copper); border-radius:2px; padding:0 2px; }
+
+  /* Reference chips — one look for every card/source mention in the app */
+  .ref { background:none; border:none; padding:0 0.05em; font:inherit; color:inherit; cursor:pointer;
+         border-bottom:1px dotted var(--ink-3); line-height:1.3; }
+  .ref:hover, .ref:focus-visible { color:var(--cobalt); border-bottom-color:var(--cobalt); }
+  .ref-card { font-family:var(--mono); font-size:0.92em; white-space:nowrap; }
+  .ref-dep { text-decoration:line-through; opacity:0.55; }
+  .ref-broken { color:var(--danger); border-bottom:1px dotted var(--danger); cursor:help; font-family:var(--mono); font-size:0.92em; }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:0.3em; vertical-align:baseline; }
+  .dot-established { background:var(--good); }
+  .dot-probable    { background:var(--ink-3); }
+  .dot-contested   { background:var(--copper); }
+  .dot-unverified  { background:var(--danger); }
+  #tip { position:fixed; z-index:400; max-width:26rem; background:var(--card); color:var(--ink);
+         border:1px solid var(--line); border-radius:7px; box-shadow:0 6px 22px rgba(0,0,0,0.20);
+         padding:0.6rem 0.75rem; font-size:0.78rem; line-height:1.45; display:none; pointer-events:none; }
+  #tip.show { display:block; }
+  .btn.just { background:var(--cobalt-soft); border-color:var(--cobalt); color:var(--cobalt); font-weight:700; }
+  .btn.just:hover { background:var(--cobalt); border-color:var(--cobalt); color:var(--paper); }
+  .dlg-crumbs { padding:0.4rem 1.1rem; border-bottom:1px solid var(--line); background:var(--paper); font-size:0.75rem; }
+
+  /* Evidence trace */
+  .linklike { background:none; border:none; padding:0; font:inherit; color:var(--cobalt); text-decoration:underline; text-underline-offset:2px; }
+  .linklike:hover { color:var(--ink); }
+  dialog.trace { max-width:52rem; }
+  .tsec { margin-top:1.2rem; }
+  .tsec h4 { font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-3); font-weight:700; margin:0 0 0.5rem; padding-bottom:0.25rem; border-bottom:1px solid var(--line); }
+  .tnode { border-left:2px solid var(--good); padding:0.4rem 0 0.4rem 0.7rem; margin:0.4rem 0; }
+  .tnode .tnode { border-left-color:var(--copper); margin:0; padding-top:0; padding-bottom:0; }
+  .tnode.against { border-left-color:var(--copper); padding:0; }
+  .trel { font-size:0.62rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); font-weight:700; }
+  .tsrc { font-size:0.7rem; color:var(--ink-2); margin-top:0.25rem; }
+  .tflag { color:var(--copper); }
+</style>
+
+<div class="topbar">
+  <span class="logo">◆ LODESTONE</span>
+  <span class="ws-title" id="wsTitle"></span>
+  <span class="proto-badge">P1 Prototype</span>
+</div>
+<div class="layout">
+  <nav class="rail" id="rail" aria-label="Main navigation"></nav>
+  <main class="main" id="main"></main>
+</div>
+<dialog id="dlg" aria-modal="true"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Evidence content, if present. Gitignored: the public repository ships the
+     tool, not the analysis. Missing file = empty workspace, not an error. -->
+<script src="seed.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   LODESTONE P1 prototype — single-file, no external dependencies.
+   Persistence: localStorage. Export: window.claude.downloads (fallback: clipboard).
+   The LLM assistant of the spec (FR-A1/A2/A5) requires a deployed backend and is
+   NOT simulated here; the Analyst view implements the deterministic audits
+   (FR-A4) that need no model. See spec §3.
+   ============================================================ */
+
+const LS_KEY = "lodestone-p1-v1";
+const TYPES = {
+  fact:{label:"Fact", plural:"Facts", prefix:"F"},
+  opportunity:{label:"Opportunity", plural:"Opportunities", prefix:"O"},
+  tradeoff:{label:"Tradeoff", plural:"Tradeoffs", prefix:"T"},
+  open_question:{label:"Open question", plural:"Open questions", prefix:"OQ"},
+  risk:{label:"Risk", plural:"Risks", prefix:"R"},
+  assumption:{label:"Assumption", plural:"Assumptions", prefix:"A"},
+  recommendation:{label:"Recommendation", plural:"Recommendations", prefix:"REC"},
+  decision:{label:"Decision", plural:"Decisions", prefix:"D"}
+};
+const CONF = ["established","probable","contested","unverified"];
+const STATUSES = ["active","investigating","answered","deprecated"];
+const RELS = ["supports","conflicts-with","answers","depends-on","informs"];
+const NEEDS_SOURCE = ["fact","opportunity","tradeoff","risk","recommendation"];
+
+/* Seed version. Bump whenever evidence is added to the seed below, and add a
+   matching entry to SEED_ADDITIONS so workspaces already in localStorage pick
+   the new evidence up without being reset (which would discard saved runs). */
+const SEED_VERSION = 5;
+
+/* Evidence added after the original seed, keyed by the version that introduced
+   it. Kept as data so seedData() and the migration in load() share one
+   definition rather than drifting apart. */
+const SEED_ADDITIONS = {
+  3: {
+    // Verified 2026-08-07 against anl.gov/cse/electrochemical-chemical-TEA
+    // (which anl.gov/cse/batpac-model-software now redirects to).
+    modelPatches: [
+      {id:"m3", fill:{
+       version:"v5.1 — the newest version Argonne names, and only in the description of a tutorial video recorded 2023-11-13. The published manual still documents v5.0 (OSTI 1877590). No changelog or release history is given, so a newer build could exist unannounced.",
+       obtain:"No public download. Argonne asks that you request a free copy by email — the partnerships page's \"Request BatPaC\" button points at ahmeds@anl.gov. Identity-gated, so it cannot be automated.",
+       caveat:"The freely distributed BatPaC assumes stiff pouch cells. BatPaC-Cylindrical is a separate model available only through collaborative research projects, so 4680-class cylindrical formats are out of scope for the free tool."}}
+    ]
+  },
+  4: {
+    // m7, m8 and m12 became directly runnable on 2026-08-07: all three publish
+    // open JSON APIs needing no credential, so they are no longer embed-only.
+    modelPatches: [
+      {id:"m7",
+       set:{tier:"data connector — runnable in LODESTONE",
+            what:"Demand and supply projections by mineral, scenario and case (Global Critical Minerals Outlook)"},
+       ifEquals:{tier:"1 (embed/link) + data",
+                 what:"Demand/supply projections by mineral and scenario"},
+       fill:{obtain:"Open JSON API at api.iea.org — no key or account. The sign-in prompts on iea.org govern report PDFs, not this data.",
+             caveat:"Values are the published outlook, not a live market feed; the vintage is stamped on every run (currently GCMO2026)."}},
+      {id:"m8",
+       set:{tier:"data connector — runnable in LODESTONE"},
+       ifEquals:{tier:"1 (embed/link) + data"},
+       fill:{obtain:"Open JSON API at api.iea.org — no key or account.",
+             caveat:"Historical and projected values share one table and are distinguished only by the Category field (Historical, Projection-STEPS, Projection-CPS). Filter before quoting a trend."}},
+      {id:"m12",
+       set:{tier:"data connector — runnable in LODESTONE"},
+       ifEquals:{tier:"1 (embed/link)"},
+       fill:{obtain:"Socrata open-data API at data.permits.performance.gov — no app token. The dashboard links to it only as the word \"HERE\".",
+             caveat:"Covers FAST-41 covered and transparency projects only (128 projects), not all federal permitting. Mining is the largest sector at 20 projects."}}
+    ]
+  },
+  5: {
+    // m9 became runnable on 2026-08-07 via the annual ScienceBase data release.
+    modelPatches: [
+      {id:"m9",
+       set:{tier:"data connector — runnable in LODESTONE"},
+       ifEquals:{tier:"data connector"},
+       fill:{obtain:"No query API exists. LODESTONE discovers the newest annual Mineral Commodity Summaries data release on ScienceBase, downloads its commodity CSV once per server session, and queries it in memory. No credential.",
+             caveat:"The Value column carries USGS survey codes, not just numbers: W means withheld to protect company confidentiality, NA not available, E estimated, and a dash an actual zero. A withheld value is not a zero and must never be summed as one. The release is replaced each February, so the vintage is stated on every run."}}
+    ]
+  }
+};
+
+/* ---------------- Seed data (from the July 2026 analysis) ---------------- */
+function seedData(){
+  // Evidence content lives in the gitignored public/seed.js so the public
+  // repository ships the tool without the analysis. Absent, the workspace
+  // simply starts empty — the app is generic.
+  const seed = (typeof window !== "undefined" && window.LODESTONE_SEED) || null;
+  const clone = (x) => x ? JSON.parse(JSON.stringify(x)) : null;
+  const models = [
+    {id:"m1", name:"IRA Mineral Price Effects Simulator", pub:"A. Cheng (Shiny)", tier:"2 (agent) — manual capture in prototype", url:"https://acheng98.shinyapps.io/IRAMineralPriceEffectsSim/", what:"Credit/subsidy effects on mineral price and sourcing outcomes"},
+    {id:"m2", name:"EverBatt", pub:"Argonne — Excel", tier:"3 (local) — manual capture in prototype", url:"https://www.anl.gov/amd/everbatt", what:"Closed-loop recycling techno-economics by chemistry and route"},
+    {id:"m3", name:"BatPaC", pub:"Argonne — Excel", tier:"3 (local) — manual capture in prototype", url:"https://www.anl.gov/cse/batpac-model-software", what:"Cell/pack design and manufacturing cost ($/kWh consequences)",
+     version:"v5.1 — the newest version Argonne names, and only in the description of a tutorial video recorded 2023-11-13. The published manual still documents v5.0 (OSTI 1877590). No changelog or release history is given, so a newer build could exist unannounced.",
+     obtain:"No public download. Argonne asks that you request a free copy by email — the partnerships page's \"Request BatPaC\" button points at ahmeds@anl.gov. Identity-gated, so it cannot be automated.",
+     caveat:"The freely distributed BatPaC assumes stiff pouch cells. BatPaC-Cylindrical is a separate model available only through collaborative research projects, so 4680-class cylindrical formats are out of scope for the free tool."},
+    {id:"m4", name:"LIBRA", pub:"NREL — Stella", tier:"3 (local) — manual capture in prototype", url:"https://www.nrel.gov/transportation/libra", what:"US recycling supply-chain buildout and recycled share of demand"},
+    {id:"m5", name:"BLAST-Lite", pub:"NREL — Python (GitHub)", tier:"3 (local) — manual capture in prototype", url:"https://github.com/NREL/BLAST-Lite", what:"Battery degradation/lifetime — grounds EOL timing assumptions"},
+    {id:"m6", name:"GREET (R&D GREET)", pub:"Argonne", tier:"3 (local) — manual capture in prototype", url:"https://greet.anl.gov/", what:"Lifecycle energy and emissions incl. recycling pathways"},
+    {id:"m7", name:"IEA Critical Minerals Data Explorer", pub:"IEA", tier:"1 (embed/link) + data", url:"https://www.iea.org/data-and-statistics/data-tools/critical-minerals-data-explorer", what:"Demand/supply projections by mineral and scenario"},
+    {id:"m8", name:"IEA Global EV Data Explorer", pub:"IEA", tier:"1 (embed/link) + data", url:"https://www.iea.org/data-and-statistics/data-tools/global-ev-data-explorer", what:"EV sales/stock/battery demand — the demand denominator"},
+    {id:"m9", name:"USGS commodity statistics", pub:"USGS NMIC", tier:"data connector", url:"https://www.usgs.gov/centers/national-minerals-information-center", what:"Mining/refining/import-reliance ground truth"},
+    {id:"m10", name:"USAspending API", pub:"US Treasury", tier:"data connector", url:"https://www.usaspending.gov/", what:"What DOE/DoD/NSF actually obligated — and cancelled"},
+    {id:"m11", name:"UN Comtrade Plus", pub:"United Nations", tier:"data connector", url:"https://comtradeplus.un.org/", what:"Trade flows — black-mass-adjacent HS codes"},
+    {id:"m12", name:"Federal Permitting Dashboard (FAST-41)", pub:"Permitting Council", tier:"1 (embed/link)", url:"https://www.permits.performance.gov/", what:"Status of 50 covered critical-minerals projects"}
+  ];
+  const base = {
+    ws: seed && seed.ws ? clone(seed.ws) : {
+      title: "New LODESTONE workspace",
+      question: "No seed file found — copy public/seed.example.js to public/seed.js to load a starting evidence set, or just begin adding cards.",
+      criteria: []
+    },
+    cards: clone(seed && seed.cards) || [],
+    sources: clone(seed && seed.sources) || [],
+    lists: clone(seed && seed.lists) || [],
+    models, runs: [], seq: 100, seedVersion: 1
+  };
+  applySeedAdditions(base);
+  return base;
+}
+
+/* Adds any seed evidence introduced after the workspace's recorded version.
+   Entities already present by id are left alone, so local edits survive; only
+   genuinely new ones are appended. Returns the number of entities added. */
+function applySeedAdditions(target){
+  let added = 0;
+  const from = Number(target.seedVersion || 1) + 1;
+  for (let v = from; v <= SEED_VERSION; v++){
+    // Tool-level additions (model metadata) ship in this file; evidence-level
+    // additions come from the gitignored seed, if one is present.
+    const pub = SEED_ADDITIONS[v] || {};
+    const priv = ((typeof window !== "undefined" && window.LODESTONE_SEED && window.LODESTONE_SEED.additions) || {})[v] || {};
+    const add = {
+      sources: [...(pub.sources || []), ...(priv.sources || [])],
+      cards: [...(pub.cards || []), ...(priv.cards || [])],
+      modelPatches: [...(pub.modelPatches || []), ...(priv.modelPatches || [])],
+    };
+    for (const s of (add.sources || [])) {
+      if (!target.sources.some(x => x.id === s.id)) { target.sources.push(JSON.parse(JSON.stringify(s))); added++; }
+    }
+    for (const c of (add.cards || [])) {
+      if (!target.cards.some(x => x.id === c.id)) { target.cards.push(JSON.parse(JSON.stringify(c))); added++; }
+    }
+    // Two patch modes, both refusing to clobber a local edit:
+    //   fill — only sets a field the workspace does not have at all
+    //   set  — replaces a field, but only when it still holds the value named
+    //          in ifEquals, so an analyst's own wording always wins
+    for (const patch of (add.modelPatches || [])) {
+      const m = (target.models || []).find(x => x.id === patch.id);
+      if (!m) continue;
+      for (const [k, v] of Object.entries(patch.fill || {})) {
+        if (m[k] === undefined) { m[k] = v; added++; }
+      }
+      for (const [k, v] of Object.entries(patch.set || {})) {
+        const expected = (patch.ifEquals || {})[k];
+        if (m[k] === v) continue;
+        if (expected === undefined || m[k] === expected) { m[k] = v; added++; }
+      }
+    }
+  }
+  target.seedVersion = SEED_VERSION;
+  return added;
+}
+
+/* ---------------- State ---------------- */
+let db;
+let view = "board";
+let filters = { type:"all", q:"", tag:"" };
+let briefSel = null; // Set of card ids, lazily initialized
+
+function load(){
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      db = JSON.parse(raw);
+      const n = applySeedAdditions(db);
+      if (n) { save(); setTimeout(()=>toast(`${n} new seeded item(s) added to this workspace`), 400); }
+      return;
+    }
+  } catch(e) {}
+  db = seedData();
+  save();
+}
+function save(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch(e) { toast("Warning: could not persist (storage unavailable)"); }
+}
+function uid(prefix){ db.seq += 1; return prefix + "-" + db.seq; }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function today(){ return new Date().toISOString().slice(0,10); }
+function card(id){ return db.cards.find(c=>c.id===id); }
+function source(id){ return db.sources.find(s=>s.id===id); }
+
+/* ---------------- Derived ---------------- */
+function effConfidence(c){
+  if (NEEDS_SOURCE.includes(c.type) && c.citations.length===0) return "unverified";
+  return c.confidence;
+}
+function hasConflict(c){
+  if (c.links.some(l=>l.rel==="conflicts-with" && card(l.to) && card(l.to).status!=="deprecated")) return true;
+  return db.cards.some(o=>o.id!==c.id && o.status!=="deprecated" && o.links.some(l=>l.rel==="conflicts-with" && l.to===c.id));
+}
+function needsSourcing(){ return db.cards.filter(c=>c.status!=="deprecated" && NEEDS_SOURCE.includes(c.type) && c.citations.length===0); }
+function singleSource(){ return db.cards.filter(c=>c.status!=="deprecated" && c.type==="fact" && c.citations.length===1); }
+function openConflicts(){
+  const seen = new Set(), pairs = [];
+  db.cards.forEach(c=>c.links.forEach(l=>{
+    if(l.rel!=="conflicts-with") return;
+    const o = card(l.to); if(!o) return;
+    if(c.status==="deprecated"||o.status==="deprecated") return;
+    const key = [c.id,o.id].sort().join("|");
+    if(!seen.has(key)){ seen.add(key); pairs.push([c,o]); }
+  }));
+  return pairs;
+}
+function staleSources(){
+  const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth()-13);
+  return db.sources.filter(s=>{
+    if(!(s.kind==="report"||s.kind==="dataset")) return false;
+    const d = new Date(s.date.length===7 ? s.date+"-01" : s.date);
+    return !isNaN(d) && d < cutoff;
+  });
+}
+function citingCards(sourceId){ return db.cards.filter(c=>c.citations.some(x=>x.sourceId===sourceId)); }
+
+/* ============================================================================
+   MODEL EXECUTION CAPABILITY.
+   Kept out of the persisted workspace deliberately: it describes what this
+   build of LODESTONE can do, not what the user recorded, so saved workspaces
+   pick up new adapters without a migration.
+   ========================================================================= */
+const MODEL_RUN = {
+  m10: { mode:"live", note:"Free public REST API — no credential needed.", params:[
+    {name:"keywords", label:"Keyword search", value:"battery recycling"},
+    {name:"awardType", label:"Award type (grants | contracts | loans)", value:"grants"},
+    {name:"from", label:"Awards starting on/after", value:"2022-01-01"},
+    {name:"to", label:"…and on/before", value:"2026-08-01"},
+    {name:"limit", label:"Max rows (1–50)", value:"10"},
+  ]},
+  m11: { mode:"key", keyName:"COMTRADE_API_KEY", note:"Free tier, but registration is required; add the key to lodestone/.env.", params:[
+    {name:"reporter", label:"Reporter code (842 = USA, 156 = China, 410 = Korea)", value:"842"},
+    {name:"period", label:"Year", value:"2023"},
+    {name:"cmdCode", label:"HS code — 854913 sorted by chemistry (Li-ion / black mass) | 854914 unsorted | 854911 lead-acid | 854919 other. Pre-2022 years use 854810.", value:"854913"},
+    {name:"flow", label:"Flow (M = imports, X = exports)", value:"M"},
+  ]},
+  m7: { mode:"live", note:"Open JSON API — no credential needed. The sign-in prompts on iea.org govern report PDFs, not this data.", params:[
+    {name:"material", label:"Material — Lithium, Cobalt, Nickel, Graphite, Neodymium, Dysprosium, Copper, Manganese, \"Magnet rare earth elements\", \"Graphite: all grades\", and others", value:"Lithium"},
+    {name:"category", label:"Category — \"Material demand\" or \"Material supply\"", value:"Material demand"},
+    {name:"flow", label:"Flow — IDLE pairs with Material demand; Mining and Refining pair with Material supply", value:"IDLE"},
+    {name:"case", label:"Case — \"Base Case\", \"Constrained rare earth elements supply\", \"Comeback of high Cd-Te technology\", and others", value:"Base Case"},
+    {name:"scenario", label:"Scenario (optional) — \"Stated Policies Scenario\", \"Current Policies Scenario\", \"High Demand Scenario\". Blank returns all three.", value:""},
+    {name:"product", label:"Product (optional) — \"Electric vehicles\", \"Grid battery storage\", \"Total\", Solar PV, Wind, and others. Blank returns all.", value:""},
+    {name:"region", label:"Region (optional) — only populated for Material supply. Blank returns World.", value:""},
+  ]},
+  m8: { mode:"live", note:"Open JSON API — no credential needed.", params:[
+    {name:"parameter", label:"Parameter — \"EV sales\", \"EV sales share\", \"EV stock\", \"EV stock share\", \"Battery deployment\", \"Electricity demand\", \"EV charging points\", and others", value:"EV sales share"},
+    {name:"mode", label:"Mode — Cars, Vans, Trucks, Buses, \"2 and 3 wheelers\", EV, EVSE", value:"Cars"},
+    {name:"powertrain", label:"Powertrain — EV, BEV, PHEV, FCEV, EREV, ICEV, ALL", value:"EV"},
+    {name:"region", label:"Region — USA, China, Europe, World, and ~60 individual countries", value:"USA"},
+    {name:"category", label:"Category (optional) — Historical, Projection-STEPS, Projection-CPS. Blank returns all, mixing history with projection.", value:""},
+    {name:"year", label:"Year (optional) — blank returns the full series", value:""},
+  ]},
+  m9: { mode:"live", note:"No query API exists, so LODESTONE downloads the current annual ScienceBase data release and queries it locally. No credential needed.", params:[
+    {name:"commodity", label:"Commodity — Lithium, Cobalt, Nickel, Manganese, \"Graphite (Natural)\", \"Rare Earths\", \"Rare Earths (Heavy)\". Matches on a substring; 127 commodities are covered.", value:"Lithium"},
+    {name:"statistic", label:"Statistic (optional) — \"Net import reliance\", Production, Imports, Exports, Reserves, Price, Consumption, Capacity. Blank returns all.", value:"Net import reliance"},
+    {name:"country", label:"Country (optional) — e.g. United States, China, Australia. Blank returns all.", value:""},
+    {name:"year", label:"Year (optional) — 2021 to 2025. Blank returns all years.", value:""},
+    {name:"limit", label:"Maximum rows (1–500)", value:"60"},
+  ]},
+  m12: { mode:"live", note:"Socrata open-data API — no app token needed.", params:[
+    {name:"dataset", label:"Dataset — vcxp-6qfw (covered projects, one row each) or mjka-7nez (adds permitting milestones, many rows per project)", value:"vcxp-6qfw"},
+    {name:"sector", label:"Sector substring (optional) — e.g. Mining (20 projects), Solar, \"Electricity Transmission\", \"Wind: Federal Offshore\". Blank returns all sectors.", value:"Mining"},
+    {name:"state", label:"State postal code (optional) — e.g. AZ, NM, NV", value:""},
+    {name:"status", label:"Status (optional) — Complete, \"In Progress\", Cancelled, Planned, Paused", value:""},
+    {name:"limit", label:"Maximum rows (1–200)", value:"25"},
+  ]},
+};
+function modelRun(id){
+  // Server bindings win: a model becomes runnable by adding an entry to
+  // model-bindings.mjs, with no client change. MODEL_RUN is only the
+  // offline fallback used by the published artifact.
+  if(serverCaps && serverCaps.params && serverCaps.params[id]){
+    const adapter = (serverCaps.adapters||{})[id];
+    return {
+      mode: "live",
+      adapter,
+      note: adapter==="browser" ? "Driven headlessly in a real browser; this tool outputs charts, so any figure read from them is an estimate."
+          : adapter==="recalc"  ? "Recalculated in Microsoft Excel — values are exact model output."
+          : adapter==="read-only" ? "Read-only: cached values only, inputs cannot be recalculated without Excel."
+          : adapter==="missing-file" ? "Workbook not found — see the reason below."
+          : undefined,
+      params: serverCaps.params[id],
+    };
+  }
+  return MODEL_RUN[id] || { mode:"manual" };
+}
+function modelReason(id){ return (serverCaps && serverCaps.reason && serverCaps.reason[id]) || null; }
+
+// Populated by a probe at start-up; stays null in the published artifact,
+// which cannot reach a server — so the UI reports capability truthfully.
+let serverCaps = null;
+async function detectCaps(){
+  try {
+    const r = await fetch("api/capabilities", { cache:"no-store" });
+    if(r.ok) serverCaps = await r.json();
+  } catch(e) { serverCaps = null; }
+  if(view === "models") render();
+}
+
+function modelBadge(id){
+  const r = modelRun(id);
+  const served = serverCaps && (serverCaps.run||[]).includes(id);
+  if(!served) return r.mode === "manual"
+    ? `<span class="badge manual">Manual capture</span>`
+    : `<span class="badge needs">Runs only in the local deployment</span>`;
+  if(!((serverCaps.ready||{})[id])) return `<span class="badge needs">${esc(modelReason(id) || "Not ready")}</span>`;
+  const adapter = (serverCaps.adapters||{})[id];
+  const how = adapter==="browser" ? "▶ Runs headlessly (charts)"
+            : adapter==="recalc"  ? "▶ Runs in Excel (exact)"
+            : "▶ LODESTONE can run this";
+  return `<span class="badge runs">${esc(how)}</span>`;
+}
+function modelRunnableNow(id){
+  if(!serverCaps) return false;
+  if(!(serverCaps.run||[]).includes(id)) return false;
+  return !!((serverCaps.ready||{})[id]);
+}
+
+/* ============================================================================
+   REFERENCE RENDERERS — one renderer per referenceable entity.
+   Every mention of a card or a source anywhere in the UI goes through these
+   two functions, so linking, hover summaries, confidence dots, broken-
+   reference handling, and click behaviour stay identical in every view.
+   ========================================================================= */
+function confDot(conf){ return `<span class="dot dot-${conf}" aria-hidden="true"></span>`; }
+
+// Inline reference to a card. Click → its justification panel.
+function cardRef(id, opts){
+  opts = opts || {};
+  const c = card(id);
+  if(!c) return `<span class="ref ref-broken" data-tipmissing="${esc(id)}" tabindex="0">${esc(id)} ⚠</span>`;
+  const label = opts.label || c.id;
+  return `<button class="ref ref-card${c.status==="deprecated"?" ref-dep":""}" data-action="trace" data-id="${esc(c.id)}" data-tipcard="${esc(c.id)}" title="">${confDot(effConfidence(c))}${esc(label)}</button>`;
+}
+
+// Inline reference to a source. Click → its library entry (which offers the
+// external link). Never links straight out: many sources are paywalled,
+// URL-less, or captured model runs.
+function sourceRef(sid, opts){
+  opts = opts || {};
+  const s = source(sid);
+  if(!s) return `<span class="ref ref-broken" data-tipmissing="${esc(sid)}" tabindex="0">${esc(sid)} ⚠</span>`;
+  const base = opts.full ? s.title : (s.author || s.title);
+  return `<button class="ref ref-src" data-action="sourceDetail" data-id="${esc(s.id)}" data-tipsource="${esc(s.id)}">${esc(base)}${opts.locator?` — ${esc(opts.locator)}`:""}</button>`;
+}
+
+/* ---------------- Hover / focus summaries ---------------- */
+let tipEl = null;
+function tipNode(){
+  if(!tipEl){ tipEl = document.createElement("div"); tipEl.id = "tip"; }
+  // A modal <dialog> lives in the top layer; a tip parented to <body> would be
+  // painted underneath it. Re-parent to whichever is showing.
+  const host = (dlg && dlg.open) ? dlg : document.body;
+  if(tipEl.parentNode !== host) host.appendChild(tipEl);
+  return tipEl;
+}
+function tipHTML(el){
+  if(el.dataset.tipcard){
+    const c = card(el.dataset.tipcard); if(!c) return null;
+    const conf = effConfidence(c);
+    return `<div class="card-top" style="margin-bottom:0.3rem;">
+        <span class="ctype ${esc(c.type)}">${TYPES[c.type].label}</span>
+        <span class="ccode">${esc(c.id)}</span>
+        <span class="conf-note">${confDot(conf)}${esc(conf)}${c.status!=="active"?` · ${esc(c.status)}`:""} · ${c.citations.length} source${c.citations.length===1?"":"s"}</span>
+      </div>
+      <div>${esc(c.statement)}</div>
+      <div class="conf-note" style="margin-top:0.35rem;">Click for its justification</div>`;
+  }
+  if(el.dataset.tipsource){
+    const s = source(el.dataset.tipsource); if(!s) return null;
+    const n = citingCards(s.id).length;
+    const stale = staleSources().some(x=>x.id===s.id);
+    return `<div><b>${esc(s.title)}</b></div>
+      <div class="conf-note">${esc(s.author)} · ${esc(s.date)} · ${esc(s.kind)} · ${esc(s.access)}${stale?` · <span class="tflag">possibly superseded</span>`:""}</div>
+      ${s.notes?`<div style="margin-top:0.3rem;">${esc(s.notes)}</div>`:""}
+      <div class="conf-note" style="margin-top:0.35rem;">Cited by ${n} card${n===1?"":"s"} · click for the library entry</div>`;
+  }
+  if(el.dataset.tipmissing){
+    return `<div class="tflag"><b>${esc(el.dataset.tipmissing)}</b> is not in this workspace.</div>
+      <div class="conf-note" style="margin-top:0.3rem;">The reference does not resolve — it may have been deleted, or the citation may be mistaken.</div>`;
+  }
+  return null;
+}
+const TIP_SEL = "[data-tipcard],[data-tipsource],[data-tipmissing]";
+function showTip(el){
+  const html = tipHTML(el); if(!html) return;
+  const t = tipNode(); t.innerHTML = html; t.classList.add("show");
+  const r = el.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - t.offsetWidth - 8));
+  let top = r.bottom + 6;
+  if(top + t.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - t.offsetHeight - 6);
+  t.style.left = left + "px"; t.style.top = top + "px";
+}
+function hideTip(){ if(tipEl) tipEl.classList.remove("show"); }
+document.addEventListener("mouseover", ev=>{ const el = ev.target.closest(TIP_SEL); if(el) showTip(el); });
+document.addEventListener("mouseout",  ev=>{ if(ev.target.closest(TIP_SEL)) hideTip(); });
+document.addEventListener("focusin",   ev=>{ const el = ev.target.closest(TIP_SEL); if(el) showTip(el); });
+document.addEventListener("focusout",  hideTip);
+window.addEventListener("scroll", hideTip, true);
+
+/* ---------------- Source detail (the target of every source reference) ---- */
+function sourceHTML(sid){
+  const s = source(sid);
+  if(!s) return `<div class="dlg-body">Source not found.</div>`;
+  const cards = citingCards(s.id);
+  const stale = staleSources().some(x=>x.id===s.id);
+  return `
+  <div class="dlg-head"><span>Source — ${esc(s.author||s.title)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <h3 style="margin:0 0 0.3rem; font-size:1rem;">${esc(s.title)}</h3>
+    <div class="conf-note">${esc(s.author)} · ${esc(s.date)} · ${esc(s.kind)} · access: ${esc(s.access)}${stale?` · <span class="tflag">over 13 months old — check for a newer edition</span>`:""}</div>
+    ${s.notes?`<p style="margin:0.7rem 0 0; font-size:0.85rem;">${esc(s.notes)}</p>`:""}
+    ${s.url?`<p style="margin:0.7rem 0 0;"><a href="${esc(s.url)}" target="_blank" rel="noopener">Open the document in a new window ↗</a>${s.access!=="open"?` <span class="conf-note">(${esc(s.access)} — you may hit a login wall)</span>`:""}</p>`
+          :`<p class="conf-note" style="margin:0.7rem 0 0;">No URL recorded for this source.</p>`}
+    <div class="tsec"><h4>Cited by ${cards.length} card${cards.length===1?"":"s"}</h4>
+      ${cards.length? cards.map(c=>{
+          const loc = (c.citations.find(x=>x.sourceId===s.id)||{}).locator;
+          return `<div class="subitem"><span>${cardRef(c.id)} ${esc(c.statement)}${loc?` <span class="conf-note">— ${esc(loc)}</span>`:""}</span></div>`;
+        }).join("") : `<div class="empty">No card cites this source yet.</div>`}
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" data-action="editSource" data-id="${esc(s.id)}" style="margin-right:auto;">Edit this source</button>
+    <button class="btn primary" data-action="closeDlg">Close</button>
+  </div>`;
+}
+function openSource(sid){ openDlg(sourceHTML(sid)); }
+
+/* ---------------- Evidence trace (FR-C3/C4 audit for a single claim) ----------
+   Walks the typed link graph beneath a card to assemble the case FOR it, the
+   case AGAINST it, and the sources both rest on. Supporting relations:
+   the card "rests on" what it depends-on; other cards "support"/"inform"/
+   "answer" it. Opposing: anything conflicting with a node, plus risks and
+   unresolved open questions attached to any node.                          */
+const MAX_TRACE_DEPTH = 5;
+function traceGraph(rootId){
+  const inCase = new Set([rootId]);
+  const tree = [];
+  (function walk(id, depth){
+    if(depth >= MAX_TRACE_DEPTH) return;
+    const c = card(id); if(!c) return;
+    const kids = [];
+    (c.links||[]).forEach(l=>{
+      const o = card(l.to);
+      if(o && o.status!=="deprecated" && l.rel==="depends-on") kids.push({id:l.to, rel:"rests on"});
+    });
+    db.cards.forEach(o=>{
+      if(o.status==="deprecated" || o.id===id) return;
+      (o.links||[]).forEach(l=>{
+        if(l.to!==id) return;
+        if(l.rel==="supports") kids.push({id:o.id, rel:"supports"});
+        else if(l.rel==="informs") kids.push({id:o.id, rel:"informs"});
+        else if(l.rel==="answers") kids.push({id:o.id, rel:"answers"});
+      });
+    });
+    kids.forEach(k=>{
+      if(inCase.has(k.id)) return;
+      inCase.add(k.id);
+      tree.push({id:k.id, parent:id, depth, rel:k.rel});
+      walk(k.id, depth+1);
+    });
+  })(rootId, 0);
+
+  const against = [], seenAg = new Set();
+  const addAg = (id, why) => {
+    if(inCase.has(id) || seenAg.has(id)) return;
+    const o = card(id);
+    if(!o || o.status==="deprecated") return;
+    seenAg.add(id); against.push({id, why});
+  };
+  inCase.forEach(id=>{
+    const c = card(id); if(!c) return;
+    (c.links||[]).forEach(l=>{
+      const o = card(l.to); if(!o) return;
+      if(l.rel==="conflicts-with") addAg(o.id, `contradicts ${id}`);
+      else if(o.type==="risk") addAg(o.id, `risk on ${id}`);
+      else if(o.type==="open_question" && o.status!=="answered") addAg(o.id, `open question from ${id}`);
+    });
+    db.cards.forEach(o=>{
+      (o.links||[]).forEach(l=>{
+        if(l.to!==id) return;
+        if(l.rel==="conflicts-with") addAg(o.id, `contradicts ${id}`);
+        else if(o.type==="risk") addAg(o.id, `risk on ${id}`);
+        else if(o.type==="open_question" && o.status!=="answered") addAg(o.id, `open question on ${id}`);
+      });
+    });
+  });
+
+  // Weak points inside the case itself (why the case might not hold).
+  const stale = new Set(staleSources().map(s=>s.id));
+  const weak = [];
+  inCase.forEach(id=>{
+    const c = card(id); if(!c) return;
+    const conf = effConfidence(c);
+    // Severity rank orders the list: load-bearing uncertainties first.
+    if(c.type==="assumption") weak.push({id, rank:0, msg:"is an assumption, not an observation — the whole case inherits it."});
+    if(conf==="unverified") weak.push({id, rank:1, msg:"is unverified — no citation backs it."});
+    else if(conf==="contested") weak.push({id, rank:2, msg:"is contested — credible sources disagree."});
+    if(c.type==="fact" && c.citations.length===1) weak.push({id, rank:3, msg:"rests on a single source."});
+    c.citations.forEach(x=>{ if(stale.has(x.sourceId)){ const s=source(x.sourceId); weak.push({id, rank:4, msg:`cites ${s?s.title:x.sourceId} (${s?s.date:"?"}) — check for a newer edition.`}); } });
+  });
+  weak.sort((a,b)=>a.rank-b.rank);
+
+  // Sources across the whole case, with the cards and locators using each.
+  const srcMap = new Map();
+  inCase.forEach(id=>{
+    const c = card(id); if(!c) return;
+    c.citations.forEach(x=>{
+      if(!source(x.sourceId)) return;
+      if(!srcMap.has(x.sourceId)) srcMap.set(x.sourceId, []);
+      srcMap.get(x.sourceId).push({cardId:id, locator:x.locator});
+    });
+  });
+
+  return { tree, against, weak, sources:[...srcMap.entries()], caseSize:inCase.size };
+}
+
+/* Inverse trace — the blast radius. Walks the same relations upward to answer
+   "if this card is wrong, what else falls over?" For an assumption or a
+   single-source fact this is usually the decision-relevant direction.       */
+function inverseGraph(rootId){
+  const seen = new Set([rootId]);
+  const tree = [];
+  (function walk(id, depth){
+    if(depth >= MAX_TRACE_DEPTH) return;
+    const c = card(id); if(!c) return;
+    const parents = [];
+    db.cards.forEach(o=>{
+      if(o.status==="deprecated" || o.id===id) return;
+      (o.links||[]).forEach(l=>{ if(l.to===id && l.rel==="depends-on") parents.push({id:o.id, rel:"rests on this"}); });
+    });
+    (c.links||[]).forEach(l=>{
+      const o = card(l.to); if(!o || o.status==="deprecated") return;
+      if(l.rel==="supports") parents.push({id:o.id, rel:"this supports"});
+      else if(l.rel==="informs") parents.push({id:o.id, rel:"this informs"});
+      else if(l.rel==="answers") parents.push({id:o.id, rel:"this answers"});
+    });
+    parents.forEach(p=>{
+      if(seen.has(p.id)) return;
+      seen.add(p.id); tree.push({id:p.id, depth, rel:p.rel});
+      walk(p.id, depth+1);
+    });
+  })(rootId, 0);
+  return tree;
+}
+
+/* Graph health — the justification panels are only as good as the links, so
+   absence of links is itself a defect worth surfacing. */
+function graphHealth(){
+  const active = db.cards.filter(c=>c.status!=="deprecated");
+  const referenced = new Set();
+  active.forEach(c=>(c.links||[]).forEach(l=>referenced.add(l.to)));
+  return {
+    orphans: active.filter(c=>!(c.links||[]).length && !referenced.has(c.id)),
+    unjustified: active.filter(c=>(c.type==="recommendation"||c.type==="decision") && traceGraph(c.id).tree.length===0),
+    inert: active.filter(c=>c.type==="assumption" && inverseGraph(c.id).length===0),
+    conflicts: openConflicts()
+  };
+}
+
+const CASE_FOR_HEADING = {
+  fact:"Why believe this", opportunity:"Why this counts as an opportunity",
+  tradeoff:"What establishes this tradeoff", open_question:"What makes this question live",
+  risk:"Why this risk is credible", assumption:"What this assumption rests on",
+  recommendation:"Why do this", decision:"Why this decision"
+};
+
+function traceCardLine(c, rel, depth){
+  const conf = effConfidence(c);
+  const cites = c.citations.map(x=>sourceRef(x.sourceId, {locator:x.locator})).filter(Boolean);
+  return `<div class="tnode" style="margin-left:${depth*1.1}rem;">
+    <div class="card-top" style="margin-bottom:0.2rem;">
+      ${rel?`<span class="trel">${esc(rel)}</span>`:""}
+      <span class="ctype ${esc(c.type)}">${TYPES[c.type].label}</span>
+      ${cardRef(c.id)}
+      <span class="conf-note">${esc(conf)}${c.citations.length?` · ${c.citations.length} source${c.citations.length===1?"":"s"}`:" · no source"}</span>
+    </div>
+    <div style="font-size:0.83rem;">${esc(c.statement)}</div>
+    ${cites.length?`<div class="tsrc">↳ ${cites.join(" · ")}</div>`:`<div class="tsrc tflag">↳ no citation</div>`}
+  </div>`;
+}
+
+function traceHTML(rootId){
+  const root = card(rootId);
+  if(!root) return `<div class="dlg-body">Card not found.</div>`;
+  const g = traceGraph(rootId);
+  const forHTML = g.tree.length
+    ? g.tree.map(n=>traceCardLine(card(n.id), n.rel, n.depth+1)).join("")
+    : `<div class="empty">No supporting cards are linked yet. Link cards with <b>supports</b>, <b>informs</b>, or <b>depends-on</b> (Edit → Links) to build the case.</div>`;
+  const againstHTML = g.against.length
+    ? g.against.map(a=>`<div class="tnode against">${traceCardLine(card(a.id), a.why, 0)}</div>`).join("")
+    : `<div class="empty">Nothing on the board currently contradicts or qualifies this case.</div>`;
+  const weakHTML = g.weak.length
+    ? `<ul style="margin:0; padding-left:1.1rem; font-size:0.79rem; color:var(--ink-2);">${g.weak.map(w=>`<li style="margin-bottom:0.25rem;">${cardRef(w.id)} ${esc(w.msg)}</li>`).join("")}</ul>`
+    : `<div class="empty">No weak points detected in the supporting chain.</div>`;
+  const srcHTML = g.sources.length
+    ? g.sources.map(([sid, uses])=>{ const s=source(sid);
+        return `<div class="subitem" style="align-items:flex-start;">
+          <span>${sourceRef(sid, {full:true})}<br><span class="conf-note">${esc(s.author)} · ${esc(s.date)} · ${esc(s.access)}</span><br>
+          <span style="color:var(--ink-2);">cited by ${uses.map(u=>`${cardRef(u.cardId)}${u.locator?` <span class="conf-note">(${esc(u.locator)})</span>`:""}`).join(", ")}</span></span>
+        </div>`; }).join("")
+    : `<div class="empty">No sources are cited anywhere in this case.</div>`;
+
+  const inv = inverseGraph(rootId);
+  const invHTML = inv.length
+    ? inv.map(n=>traceCardLine(card(n.id), n.rel, n.depth)).join("")
+    : `<div class="empty">Nothing on the board depends on this card, so being wrong about it would not directly invalidate anything else recorded here.</div>`;
+  const crumbs = traceStack.length > 1
+    ? `<div class="dlg-crumbs">${traceStack.map((id,i)=> i===traceStack.length-1
+        ? `<span class="ccode">${esc(id)}</span>`
+        : `<button class="ref ref-card" data-action="traceCrumb" data-i="${i}">${esc(id)}</button> <span class="conf-note">›</span>`).join(" ")}</div>`
+    : "";
+  const linkOpts = db.cards.filter(o=>o.id!==rootId && o.status!=="deprecated")
+    .map(o=>`<option value="${esc(o.id)}">${esc(o.id)} — ${esc(o.statement.slice(0,60))}</option>`).join("");
+
+  return `
+  <div class="dlg-head">
+    <span>Justification — ${esc(root.id)}</span>
+    <span>${traceStack.length>1?`<button class="btn small" data-action="traceBack">← Back</button> `:""}<button class="btn small" data-action="closeDlg">✕</button></span>
+  </div>
+  ${crumbs}
+  <div class="dlg-body">
+    <div class="card-item" style="margin-bottom:0.9rem;">
+      <div class="card-top">
+        <span class="ctype ${esc(root.type)}">${TYPES[root.type].label}</span>
+        <span class="ccode">${esc(root.id)}</span>
+        <span class="conf-note">${confDot(effConfidence(root))}Confidence: <b>${esc(effConfidence(root))}</b>${root.status!=="active"?` · status: <b>${esc(root.status)}</b>`:""} · ${root.citations.length} source${root.citations.length===1?"":"s"}</span>
+        ${hasConflict(root)?`<span class="badge conflict">⚠ conflict open</span>`:""}
+      </div>
+      <div class="card-body">${esc(root.statement)}</div>
+      ${root.detail?`<div class="card-detail">${esc(root.detail)}</div>`:""}
+      <div class="card-meta">
+        ${root.tags.length?`<span>${root.tags.map(t=>`<span class="tagpill">${esc(t)}</span>`).join(" ")}</span>`:""}
+        ${(root.links||[]).length?`<span>links: ${root.links.map(l=>`${esc(l.rel)} ${cardRef(l.to)}`).join(", ")}</span>`:""}
+        <button class="btn small" data-action="showOnBoard" data-id="${esc(root.id)}">Show this card on the board ↗</button>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:0;">From the link graph: ${g.caseSize - 1} supporting card(s), ${g.against.length} challenge(s), ${inv.length} card(s) downstream, ${g.sources.length} source(s).</p>
+
+    <div class="tsec"><h4>${esc(CASE_FOR_HEADING[root.type] || "The case for")}</h4>${forHTML}</div>
+    <div class="tsec"><h4>The case against &amp; open challenges</h4>${againstHTML}</div>
+    <div class="tsec"><h4>Weakest links in this case</h4>${weakHTML}</div>
+    <div class="tsec"><h4>If this is wrong, what breaks</h4>${invHTML}</div>
+    <div class="tsec"><h4>Sources this case rests on</h4>${srcHTML}</div>
+    <div class="tsec"><h4>Link this card</h4>
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+        <span class="ccode">${esc(root.id)}</span>
+        <select id="lk-rel">${RELS.map(r=>`<option${r==="depends-on"?" selected":""}>${r}</option>`).join("")}</select>
+        <select id="lk-to" style="flex:1; min-width:12rem;">${linkOpts}</select>
+        <button class="btn" data-action="addLinkFromTrace" data-id="${esc(root.id)}">Add link</button>
+      </div>
+      <p class="hint" style="margin:0.4rem 0 0;">A trace is only as complete as the links. Use <b>depends-on</b> when this card rests on another; <b>supports</b> or <b>informs</b> when it feeds another; <b>conflicts-with</b> to record a disagreement.</p>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" data-action="editCard" data-id="${esc(root.id)}" style="margin-right:auto;">Edit this card</button>
+    <button class="btn primary" data-action="closeDlg">Close</button>
+  </div>`;
+}
+let traceStack = [];
+function openTrace(id){
+  if(dlg.open && dlg.classList.contains("trace")){
+    if(traceStack[traceStack.length-1] !== id) traceStack.push(id);
+  } else {
+    traceStack = [id];
+  }
+  hideTip();
+  openDlg(traceHTML(id)); dlg.classList.add("trace");
+}
+function traceGoto(i){ traceStack = traceStack.slice(0, i+1); openDlg(traceHTML(traceStack[i])); dlg.classList.add("trace"); }
+function traceBack(){
+  traceStack.pop();
+  const prev = traceStack[traceStack.length-1];
+  if(prev){ openDlg(traceHTML(prev)); dlg.classList.add("trace"); } else closeDlg();
+}
+
+/* ---------------- Rendering ---------------- */
+function render(){
+  document.getElementById("wsTitle").textContent = "Workspace: " + db.ws.title;
+  renderRail();
+  const main = document.getElementById("main");
+  if(view==="board") main.innerHTML = viewBoard();
+  else if(view==="library") main.innerHTML = viewLibrary();
+  else if(view==="models"){ main.innerHTML = viewModels(); if(highlightRunId) requestAnimationFrame(flashRun); }
+  else if(view==="analyst") main.innerHTML = viewAnalyst();
+  else if(view==="brief") main.innerHTML = viewBrief();
+  else if(view==="settings") main.innerHTML = viewSettings();
+}
+function renderRail(){
+  const counts = {};
+  Object.keys(TYPES).forEach(t=>counts[t]=db.cards.filter(c=>c.type===t && c.status!=="deprecated").length);
+  const total = db.cards.filter(c=>c.status!=="deprecated").length;
+  const ns = needsSourcing().length, oc = openConflicts().length, st = staleSources().length;
+  const item = (v,label,count,extra)=>`<button class="nav-item ${view===v&&(!extra||filters.type===extra)?"active":""}" data-action="nav" data-view="${v}" ${extra?`data-type="${extra}"`:""}><span>${label}</span><span class="nav-count">${count!=null?count:""}</span></button>`;
+  document.getElementById("rail").innerHTML =
+    item("board","Evidence board",total) +
+    item("library","Reading library",db.sources.length) +
+    item("models","Models & runs",db.runs.length) +
+    item("analyst","Analyst tools","") +
+    item("brief","Brief & export","") +
+    `<div class="nav-head">Card types</div>` +
+    Object.keys(TYPES).map(t=>`<button class="nav-item" data-action="navtype" data-type="${t}"><span>${TYPES[t].plural}</span><span class="nav-count">${counts[t]}</span></button>`).join("") +
+    `<div class="nav-head">Alerts</div>` +
+    `<button class="nav-item" data-action="navaudit" data-audit="needs"><span class="${ns?"nav-alert":""}">Needs sourcing</span><span class="nav-count">${ns}</span></button>` +
+    `<button class="nav-item" data-action="navaudit" data-audit="conflicts"><span class="${oc?"nav-alert":""}">Open conflicts</span><span class="nav-count">${oc}</span></button>` +
+    `<button class="nav-item" data-action="navaudit" data-audit="stale"><span class="${st?"nav-alert":""}">Stale sources</span><span class="nav-count">${st}</span></button>` +
+    `<div class="nav-head">Workspace</div>` +
+    item("settings","Settings & data","");
+}
+
+function cardHTML(c, opts){
+  opts = opts||{};
+  const conf = effConfidence(c);
+  const cites = c.citations.map(x=>sourceRef(x.sourceId, {locator:x.locator}));
+  const links = c.links.map(l=>`${esc(l.rel)} ${cardRef(l.to)}`);
+  const unsourced = NEEDS_SOURCE.includes(c.type) && c.citations.length===0;
+  return `<article class="card-item" data-cid="${esc(c.id)}">
+    <div class="card-top">
+      <span class="ctype ${esc(c.type)}">${TYPES[c.type].label}</span>
+      <span class="ccode">${esc(c.id)}</span>
+      <span class="conf-note">Confidence: <b>${esc(conf)}</b>${c.status!=="active"?` · status: <b>${esc(c.status)}</b>`:""} · <button class="linklike conf-note" data-action="trace" data-id="${esc(c.id)}" title="Show the sources and the reasoning behind this card">${c.citations.length} source${c.citations.length===1?"":"s"}</button></span>
+      ${hasConflict(c)?`<span class="badge conflict">⚠ conflict open</span>`:""}
+      ${unsourced?`<span class="badge unsourced">needs sourcing</span>`:""}
+    </div>
+    <div class="card-body">${esc(c.statement)}</div>
+    ${c.detail?`<div class="card-detail">${esc(c.detail)}</div>`:""}
+    <div class="card-meta">
+      ${cites.length?`<span class="src">${cites.join(" · ")}</span>`:""}
+      ${links.length?`<span>links: ${links.join(", ")}</span>`:""}
+      ${c.tags.length?`<span>${c.tags.map(t=>`<span class="tagpill">${esc(t)}</span>`).join(" ")}</span>`:""}
+      ${opts.noEdit?"":`<button class="btn small just" data-action="trace" data-id="${esc(c.id)}">Justification</button>
+      <button class="btn small" data-action="editCard" data-id="${esc(c.id)}">Edit</button>`}
+    </div>
+  </article>`;
+}
+
+function viewBoard(){
+  let cards = db.cards.filter(c=>c.status!=="deprecated");
+  if(filters.type!=="all") cards = cards.filter(c=>c.type===filters.type);
+  if(filters.tag) cards = cards.filter(c=>c.tags.includes(filters.tag));
+  if(filters.q){
+    const q = filters.q.toLowerCase();
+    cards = cards.filter(c=>(c.statement+" "+c.detail+" "+c.tags.join(" ")+" "+c.id).toLowerCase().includes(q));
+  }
+  const allTags = [...new Set(db.cards.flatMap(c=>c.tags))].sort();
+  return `
+  <div class="view-head">
+    <span class="view-title">Evidence board</span>
+    <input class="searchbox" type="text" id="boardQ" value="${esc(filters.q)}" placeholder="Filter cards…" aria-label="Filter cards">
+    <button class="btn primary" data-action="newCard">+ New card</button>
+  </div>
+  <div class="chips" style="margin-bottom:0.5rem;">
+    <button class="chip ${filters.type==="all"?"on":""}" data-action="ftype" data-type="all">All</button>
+    ${Object.keys(TYPES).map(t=>`<button class="chip ${filters.type===t?"on":""}" data-action="ftype" data-type="${t}">${TYPES[t].plural}</button>`).join("")}
+  </div>
+  <div class="chips" style="margin-bottom:0.9rem;">
+    ${allTags.map(t=>`<button class="chip ${filters.tag===t?"on":""}" data-action="ftag" data-tag="${esc(t)}">#${esc(t)}</button>`).join("")}
+  </div>
+  ${cards.length? cards.map(c=>cardHTML(c)).join("") : `<div class="empty">No cards match the current filters.</div>`}`;
+}
+
+function viewLibrary(){
+  const rows = db.sources.map(s=>{
+    const n = citingCards(s.id).length;
+    const stale = staleSources().includes(s);
+    return `<tr>
+      <td>${sourceRef(s.id,{full:true})}${stale?` <span class="badge unsourced" title="Over 13 months old — check for a newer edition">stale?</span>`:""}<br><span style="font-size:0.68rem;color:var(--ink-3);">${esc(s.author)} · ${esc(s.date)} · ${esc(s.kind)} · ${esc(s.access)}</span>${s.notes?`<br><span style="font-size:0.7rem;">${esc(s.notes)}</span>`:""}</td>
+      <td>${n? citingCards(s.id).map(c=>cardRef(c.id)).join(" ") : `<span class="conf-note">none</span>`}</td>
+      <td style="white-space:nowrap;">
+        ${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">open ↗</a><br>`:""}
+        <button class="btn small" data-action="editSource" data-id="${esc(s.id)}">Edit</button>
+        <button class="btn small danger" data-action="delSource" data-id="${esc(s.id)}" ${n?"disabled title='Cited by cards — cannot delete'":""}>Delete</button>
+      </td></tr>`;
+  }).join("");
+  const listsHTML = db.lists.map(l=>`
+    <div class="panel">
+      <h3>${esc(l.title)} <button class="btn small" data-action="delList" data-id="${esc(l.id)}" style="float:right;">Delete list</button></h3>
+      <ol style="margin:0.4rem 0 0.6rem; padding-left:1.3rem; font-size:0.8rem;">
+        ${l.items.map((it,i)=>{ const s=source(it.sourceId); if(!s) return ""; return `<li style="margin-bottom:0.35rem;">${esc(s.title)} <span style="color:var(--ink-3);">(${esc(s.author)}, ${esc(s.date)})</span>${it.note?`<br><span style="color:var(--ink-3);font-size:0.74rem;">— ${esc(it.note)}</span>`:""}
+          <button class="btn small" data-action="listMove" data-list="${esc(l.id)}" data-i="${i}" data-dir="-1" ${i===0?"disabled":""}>↑</button>
+          <button class="btn small" data-action="listMove" data-list="${esc(l.id)}" data-i="${i}" data-dir="1" ${i===l.items.length-1?"disabled":""}>↓</button>
+          <button class="btn small danger" data-action="listRemove" data-list="${esc(l.id)}" data-i="${i}">remove</button></li>`; }).join("")}
+      </ol>
+      <div class="inline" style="display:flex;gap:0.5rem;">
+        <select id="addTo-${esc(l.id)}" aria-label="Add source to list">${db.sources.filter(s=>!l.items.some(it=>it.sourceId===s.id)).map(s=>`<option value="${esc(s.id)}">${esc(s.title.slice(0,60))}</option>`).join("")}</select>
+        <button class="btn" data-action="listAdd" data-list="${esc(l.id)}">Add to list</button>
+      </div>
+    </div>`).join("");
+  return `
+  <div class="view-head">
+    <span class="view-title">Reading library</span>
+    <span>
+      <button class="btn" data-action="newList">+ New reading list</button>
+      <button class="btn primary" data-action="newSource">+ Add source</button>
+    </span>
+  </div>
+  <p class="view-sub">In the full build (FR-L1/L2), ingest fetches metadata and full text and the assistant proposes cards. In this prototype, sources are cataloged manually; “stale?” flags reports/datasets over 13 months old (FR-L4, simplified).</p>
+  <div class="gridwrap"><table class="grid" aria-label="Sources"><thead><tr><th>Source</th><th>Cited by</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <h3 style="font-size:0.95rem;">Reading lists</h3>
+  ${listsHTML || `<div class="empty">No reading lists yet.</div>`}`;
+}
+
+function viewModels(){
+  const runsFor = id => db.runs.filter(r=>r.modelId===id).length;
+  const runRows = db.runs.slice().reverse().map(r=>{
+    const m = db.models.find(x=>x.id===r.modelId);
+    return `<tr data-runrow="${esc(r.id)}" class="${highlightRunId===r.id?"run-hi":""}">
+      <td>${esc(r.name)}<br><span style="font-size:0.68rem;color:var(--ink-3);">${esc(m?m.name:"?")} · ${esc(r.date)} · ${esc(r.runner||"user")}</span></td>
+      <td style="font-size:0.72rem;"><b>Params:</b> ${esc(r.params)}<br><b>Outputs:</b> ${esc(r.outputs)}${r.notes?`<br><b>Notes:</b> ${esc(r.notes)}`:""}</td>
+      <td style="white-space:nowrap;">
+        ${r.result?`<button class="btn small just" data-action="viewRun" data-id="${esc(r.id)}">View result</button><br>`:""}
+        ${r.sourceId?`<span style="font-size:0.68rem;color:var(--good);">✓ in library</span>`:`<button class="btn small" data-action="promoteRun" data-id="${esc(r.id)}">Save to library</button>`}<br>
+        <button class="btn small danger" data-action="delRun" data-id="${esc(r.id)}">Delete</button>
+      </td></tr>`;
+  }).join("");
+  const cards = db.models.map(m=>{
+    const r = modelRun(m.id);
+    const n = runsFor(m.id);
+    return `<div class="card-item">
+      <div class="card-top">
+        ${modelBadge(m.id)}
+        <span style="font-weight:700;">${esc(m.name)}</span>
+        <span class="conf-note">${esc(m.pub)}</span>
+        ${n?`<span class="conf-note">· ${n} recorded run${n===1?"":"s"}</span>`:""}
+      </div>
+      <div class="card-body" style="font-size:0.84rem;">${esc(m.what)}</div>
+      <div class="card-detail">${esc(m.tier)}${r.note?` — ${esc(r.note)}`:""}</div>
+      ${m.version?`<div class="card-detail"><b>Version:</b> ${esc(m.version)}</div>`:""}
+      ${m.obtain?`<div class="card-detail"><b>How to obtain:</b> ${esc(m.obtain)}</div>`:""}
+      ${m.caveat?`<div class="card-detail"><b>Scope limit:</b> ${esc(m.caveat)}</div>`:""}
+      <div class="card-meta">
+        <a href="${esc(m.url)}" target="_blank" rel="noopener">Open the tool ↗</a>
+        ${modelRunnableNow(m.id)?`<button class="btn small just" data-action="runNow" data-id="${esc(m.id)}">▶ Run it here</button>`:""}
+        ${!modelRunnableNow(m.id) && (r.mode!=="manual" || (serverCaps&&(serverCaps.run||[]).includes(m.id)))?`<span class="conf-note">${serverCaps?esc(modelReason(m.id)||"Not ready"):"Start the local server (npm start) to enable"}</span>`:""}
+        <button class="btn small" data-action="recordRun" data-id="${esc(m.id)}">Record a run manually</button>
+      </div>
+    </div>`;
+  }).join("");
+  const live = db.models.filter(m=>modelRun(m.id).mode!=="manual").length;
+  return `
+  <div class="view-head"><span class="view-title">Models &amp; runs</span></div>
+
+  <h3 style="font-size:0.95rem; margin:0 0 0.5rem;">Recorded runs (${db.runs.length})</h3>
+  <p class="view-sub" style="margin-top:0;">Every run — executed here or recorded by hand — is kept with its parameters, outputs, and provenance, newest first. <b>Save to library</b> makes a run citable from any card; <b>View result</b> reopens the full table.</p>
+  ${db.runs.length?`<div class="gridwrap"><table class="grid"><thead><tr><th>Run</th><th>Record</th><th>Actions</th></tr></thead><tbody>${runRows}</tbody></table></div>`
+    :`<div class="empty">No runs yet. Run a model below, or record one you ran elsewhere.</div>`}
+
+  <h3 style="font-size:0.95rem; margin:1.6rem 0 0.4rem;">Registered models (${db.models.length})</h3>
+  <p class="view-sub" style="margin-top:0;">${live} of ${db.models.length} have a callable interface LODESTONE can drive directly; the rest are Excel workbooks, proprietary runtimes, or interactive apps with no API, so they use guided-manual capture — you run them, LODESTONE records the parameters, outputs, and provenance so the run stays citable.</p>
+  ${cards}`;
+}
+
+function viewAnalyst(){
+  const ns = needsSourcing(), ss = singleSource(), oc = openConflicts(), st = staleSources();
+  const oqs = db.cards.filter(c=>c.type==="open_question" && c.status!=="deprecated" && c.status!=="answered");
+  const gh = graphHealth();
+  const cov = db.ws.criteria.map((cr,i)=>{
+    const n = db.cards.filter(c=>c.status!=="deprecated" && (c.criteria||[]).includes(i)).length;
+    return {cr, n};
+  });
+  const maxCov = Math.max(1, ...cov.map(x=>x.n));
+  return `
+  <div class="view-head"><span class="view-title">Analyst tools</span></div>
+  <div class="notice"><b>Where the LLM assistant lives:</b> the live assistant — grounded Q&amp;A, card proposals, and red-team mode (FR-A1–A5) on Claude Opus 5 and Sonnet 5 — is implemented in the <b>local deployment</b> (the <code>lodestone/</code> app: <code>npm start</code>, then open the Analyst view), where an API key can be held server-side. This published page cannot reach external services, so a live assistant can't run here; everything below is computed deterministically from your workspace data (FR-A4). Workspaces move between the two via Settings → Export/Import JSON.</div>
+
+  <div class="panel">
+    <h3>Grounded search</h3>
+    <div style="display:flex; gap:0.5rem; margin-bottom:0.6rem;">
+      <input type="text" id="analystQ" class="searchbox" style="max-width:none;" placeholder="Search every card, source, and run… (e.g., LFP margin)" aria-label="Search workspace">
+      <button class="btn primary" data-action="runSearch">Search</button>
+    </div>
+    <div id="searchResults"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Decision-criteria coverage</h3>
+    <p class="hint">How many active cards are marked as bearing on each criterion (FR-A4: “which criteria have no supporting cards?”).</p>
+    ${cov.map(x=>`<div class="criteria-cov"><span style="min-width:16rem;">${esc(x.cr)}</span><span class="covbar" aria-hidden="true"><div style="width:${Math.round(100*x.n/maxCov)}%"></div></span><span style="font-variant-numeric:tabular-nums; color:${x.n===0?"var(--danger)":"var(--ink-2)"};">${x.n}${x.n===0?" — gap":""}</span></div>`).join("")}
+  </div>
+
+  <div class="panel" id="audit-conflicts">
+    <h3>Open contradictions (${oc.length})</h3>
+    ${oc.length? oc.map(([a,b])=>`<div class="hit"><span class="where">${cardRef(a.id)} ⚠ ${cardRef(b.id)}</span><br>${esc(a.statement)}<br><i>vs.</i> ${esc(b.statement)}<br><span style="font-size:0.7rem;color:var(--ink-3);">Resolve by editing one card, deprecating one, or recording the disagreement as a tradeoff (FR-C4).</span></div>`).join("") : `<div class="empty">None — every conflicts-with link is resolved.</div>`}
+  </div>
+
+  <div class="panel" id="audit-needs">
+    <h3>Needs sourcing (${ns.length})</h3>
+    <p class="hint">Facts, opportunities, tradeoffs, risks, and recommendations with zero citations are displayed as <b>unverified</b> regardless of their set confidence (FR-C3).</p>
+    ${ns.length? ns.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <button class="btn small" data-action="editCard" data-id="${esc(c.id)}">Add citation</button></div>`).join("") : `<div class="empty">All substantive cards carry at least one citation.</div>`}
+  </div>
+
+  <div class="panel">
+    <h3>Single-source facts (${ss.length})</h3>
+    ${ss.length? ss.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <span style="font-size:0.7rem;color:var(--ink-3);">— corroborate before relying on it in a brief.</span></div>`).join("") : `<div class="empty">No facts rest on a single source.</div>`}
+  </div>
+
+  <div class="panel" id="audit-stale">
+    <h3>Freshness check (${st.length})</h3>
+    <p class="hint">Reports/datasets over 13 months old — check the publisher for a superseding edition (FR-L4, simplified heuristic).</p>
+    ${st.length? st.map(s=>`<div class="hit"><span class="where">${esc(s.date)}</span> ${sourceRef(s.id,{full:true})} — cited by ${citingCards(s.id).map(c=>cardRef(c.id)).join(", ")||"0 cards"}</div>`).join("") : `<div class="empty">No stale sources.</div>`}
+  </div>
+
+  <div class="panel">
+    <h3>Open-question queue (${oqs.length})</h3>
+    ${oqs.length? oqs.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)} · ${esc(c.status)}</span> ${esc(c.statement)}</div>`).join("") : `<div class="empty">No open questions.</div>`}
+  </div>
+
+  <div class="panel">
+    <h3>Graph health (${gh.orphans.length + gh.unjustified.length + gh.inert.length})</h3>
+    <p class="hint">Every justification is assembled from the links between cards, so a missing link is a real gap: it makes a case look thinner than it is. These cards the graph cannot yet reason about.</p>
+    <h4 style="font-size:0.72rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); margin:0.8rem 0 0.3rem;">Unjustified recommendations (${gh.unjustified.length})</h4>
+    ${gh.unjustified.length? gh.unjustified.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <button class="btn small just" data-action="trace" data-id="${esc(c.id)}">Link its evidence</button></div>`).join("")
+      : `<div class="empty">Every recommendation has a supporting chain.</div>`}
+    <h4 style="font-size:0.72rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); margin:0.8rem 0 0.3rem;">Assumptions nothing depends on (${gh.inert.length})</h4>
+    ${gh.inert.length? gh.inert.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <span class="conf-note">— either something rests on it and the link is missing, or it is dead weight.</span></div>`).join("")
+      : `<div class="empty">Every assumption has something resting on it.</div>`}
+    <h4 style="font-size:0.72rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); margin:0.8rem 0 0.3rem;">Orphan cards — no links in or out (${gh.orphans.length})</h4>
+    ${gh.orphans.length? gh.orphans.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <button class="btn small" data-action="trace" data-id="${esc(c.id)}">Link it</button></div>`).join("")
+      : `<div class="empty">No orphans — every card is connected to the argument.</div>`}
+  </div>`;
+}
+
+function viewBrief(){
+  if(briefSel===null) briefSel = new Set(db.cards.filter(c=>c.status!=="deprecated").map(c=>c.id));
+  const groups = Object.keys(TYPES).map(t=>{
+    const cs = db.cards.filter(c=>c.type===t && c.status!=="deprecated");
+    if(!cs.length) return "";
+    return `<div class="panel"><h3>${TYPES[t].plural}</h3>${cs.map(c=>`
+      <label style="display:flex; gap:0.5rem; align-items:flex-start; font-size:0.8rem; margin-bottom:0.4rem;">
+        <input type="checkbox" data-action="briefToggle" data-id="${esc(c.id)}" ${briefSel.has(c.id)?"checked":""}>
+        <span>${cardRef(c.id)} ${esc(c.statement)}</span>
+      </label>`).join("")}</div>`;
+  }).join("");
+  return `
+  <div class="view-head">
+    <span class="view-title">Brief &amp; export</span>
+    <span>
+      <button class="btn" data-action="briefAll">Select all</button>
+      <button class="btn" data-action="briefNone">Select none</button>
+      <button class="btn primary" data-action="genBrief">Generate memo preview</button>
+    </span>
+  </div>
+  <p class="view-sub">Select cards to include; the memo groups them by type with numbered citations frozen to the current library (FR-S1). Exports use the platform download prompt when available, otherwise copy to clipboard.</p>
+  ${groups}
+  <div class="panel"><h3>Memo preview</h3><div id="memoPreview" class="memo-preview">Click “Generate memo preview”.</div>
+    <div style="margin-top:0.6rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <button class="btn primary" data-action="dlMemo">Download memo (.md)</button>
+      <button class="btn" data-action="dlBiblio">Download bibliography (.md)</button>
+      <button class="btn" data-action="dlJson">Download workspace (.json)</button>
+    </div>
+  </div>`;
+}
+
+function viewSettings(){
+  return `
+  <div class="view-head"><span class="view-title">Settings &amp; data</span></div>
+  <div class="panel">
+    <h3>Workspace</h3>
+    <div class="frow"><label for="setTitle">Title</label><input type="text" id="setTitle" value="${esc(db.ws.title)}"></div>
+    <div class="frow"><label for="setQ">Decision question</label><input type="text" id="setQ" value="${esc(db.ws.question)}"></div>
+    <div class="frow"><label for="setCrit">Decision criteria (one per line — card links to criteria are positional, so edit rather than reorder)</label><textarea id="setCrit">${esc(db.ws.criteria.join("\n"))}</textarea></div>
+    <button class="btn primary" data-action="saveWs">Save workspace settings</button>
+  </div>
+  <div class="panel">
+    <h3>Data</h3>
+    <p class="hint">All data lives in this browser's local storage (prototype; FR-G audit trail and multi-user are backend features). Export before clearing your browser data.</p>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <button class="btn" data-action="dlJson">Export workspace (.json)</button>
+      <label class="btn" style="display:inline-block;">Import workspace (.json)<input type="file" id="importFile" accept=".json,application/json" style="display:none;"></label>
+      <button class="btn danger" data-action="resetSeed">Reset to seeded demo workspace</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>About this prototype</h3>
+    <p class="hint">LODESTONE P1 prototype implementing the evidence core of the specification: typed cards with confidence/citations/links (FR-C1–C5), reading library and lists (FR-L1/L3, manual ingest), deterministic analyst audits (FR-A4), model registry with guided-manual run capture (FR-M fallback), and memo/bibliography/JSON export (FR-S1/S3). Not implemented here (backend required): LLM assistant, live web ingest, Tier-2/3 model execution, multi-user, audit log. Seeded with evidence from the July 2026 battery-recycling analysis.</p>
+  </div>`;
+}
+
+/* ---------------- Modals ---------------- */
+const dlg = document.getElementById("dlg");
+function openDlg(html){ dlg.classList.remove("trace"); dlg.innerHTML = html; dlg.showModal(); }
+function closeDlg(){ dlg.close(); dlg.innerHTML=""; dlg.classList.remove("trace"); }
+
+let draft = null;
+function cardForm(existing){
+  draft = existing ? JSON.parse(JSON.stringify(existing)) : {id:null,type:"fact",statement:"",detail:"",tags:[],confidence:"probable",status:"active",citations:[],links:[],criteria:[],owner:"",origin:"user"};
+  renderCardForm();
+}
+function renderCardForm(){
+  const c = draft;
+  const isNew = !c.id;
+  const others = db.cards.filter(o=>o.id!==c.id && o.status!=="deprecated");
+  openDlg(`
+  <div class="dlg-head"><span>${isNew?"New card":"Edit "+esc(c.id)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <div class="frow"><label for="cf-type">Type</label>
+      <select id="cf-type">${Object.keys(TYPES).map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${TYPES[t].label}</option>`).join("")}</select></div>
+    <div class="frow"><label for="cf-st">Statement (aim ≤ 280 chars)</label>
+      <textarea id="cf-st">${esc(c.statement)}</textarea><div class="charcount" id="cf-count">${c.statement.length} chars</div></div>
+    <div class="frow"><label for="cf-detail">Detail / caveats</label><textarea id="cf-detail">${esc(c.detail)}</textarea></div>
+    <div class="frow inline">
+      <span style="flex:1;"><label for="cf-conf">Confidence</label><select id="cf-conf">${CONF.map(x=>`<option ${c.confidence===x?"selected":""}>${x}</option>`).join("")}</select></span>
+      <span style="flex:1;"><label for="cf-status">Status</label><select id="cf-status">${STATUSES.map(x=>`<option ${c.status===x?"selected":""}>${x}</option>`).join("")}</select></span>
+    </div>
+    <div class="frow"><label for="cf-tags">Tags (comma-separated)</label><input type="text" id="cf-tags" value="${esc(c.tags.join(", "))}"></div>
+    <div class="frow"><label>Bears on decision criteria</label>
+      ${db.ws.criteria.map((cr,i)=>`<label style="display:block; font-size:0.78rem; text-transform:none; letter-spacing:0; font-weight:400; color:var(--ink-2);"><input type="checkbox" class="cf-crit" data-i="${i}" ${(c.criteria||[]).includes(i)?"checked":""}> ${esc(cr)}</label>`).join("")}</div>
+    <div class="frow"><label>Citations (${c.citations.length})</label>
+      ${c.citations.map((x,i)=>{ const s=source(x.sourceId); return `<div class="subitem"><span>${esc(s?s.title.slice(0,50):"?")}${x.locator?` — <i>${esc(x.locator)}</i>`:""}</span><button class="btn small danger" data-action="draftRmCite" data-i="${i}">remove</button></div>`; }).join("")}
+      <div class="inline" style="margin-top:0.3rem; display:flex; gap:0.4rem;">
+        <select id="cf-cite-src" style="flex:2;">${db.sources.map(s=>`<option value="${esc(s.id)}">${esc(s.title.slice(0,55))}</option>`).join("")}</select>
+        <input type="text" id="cf-cite-loc" placeholder="locator (p./table/fig.)" style="flex:1;">
+        <button class="btn" data-action="draftAddCite">Add</button>
+      </div></div>
+    <div class="frow"><label>Links to other cards (${c.links.length})</label>
+      ${c.links.map((l,i)=>{ const o=card(l.to); return `<div class="subitem"><span>${esc(l.rel)} → ${esc(o?o.id+" · "+o.statement.slice(0,40):"?")}</span><button class="btn small danger" data-action="draftRmLink" data-i="${i}">remove</button></div>`; }).join("")}
+      <div class="inline" style="margin-top:0.3rem; display:flex; gap:0.4rem;">
+        <select id="cf-link-rel" style="flex:1;">${RELS.map(r=>`<option>${r}</option>`).join("")}</select>
+        <select id="cf-link-to" style="flex:2;">${others.map(o=>`<option value="${esc(o.id)}">${esc(o.id)} — ${esc(o.statement.slice(0,45))}</option>`).join("")}</select>
+        <button class="btn" data-action="draftAddLink">Add</button>
+      </div></div>
+  </div>
+  <div class="dlg-foot">
+    ${isNew?"":`<button class="btn danger" data-action="deprecateCard" style="margin-right:auto;">Deprecate</button>`}
+    <button class="btn" data-action="closeDlg">Cancel</button>
+    <button class="btn primary" data-action="saveCard">${isNew?"Create card":"Save changes"}</button>
+  </div>`);
+  const st = document.getElementById("cf-st");
+  st.addEventListener("input", ()=>{ document.getElementById("cf-count").textContent = st.value.length + " chars" + (st.value.length>280?" — over 280, consider tightening":""); });
+}
+function collectCardForm(){
+  draft.type = document.getElementById("cf-type").value;
+  draft.statement = document.getElementById("cf-st").value.trim();
+  draft.detail = document.getElementById("cf-detail").value.trim();
+  draft.confidence = document.getElementById("cf-conf").value;
+  draft.status = document.getElementById("cf-status").value;
+  draft.tags = document.getElementById("cf-tags").value.split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
+  draft.criteria = [...document.querySelectorAll(".cf-crit")].filter(x=>x.checked).map(x=>+x.dataset.i);
+}
+
+function sourceForm(existing){
+  const s = existing || {id:null,kind:"report",title:"",author:"",date:today().slice(0,7),url:"",access:"open",notes:""};
+  openDlg(`
+  <div class="dlg-head"><span>${s.id?"Edit source":"Add source"}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <div class="frow"><label for="sf-title">Title</label><input type="text" id="sf-title" value="${esc(s.title)}"></div>
+    <div class="frow inline">
+      <span style="flex:2;"><label for="sf-author">Author / publisher</label><input type="text" id="sf-author" value="${esc(s.author)}"></span>
+      <span style="flex:1;"><label for="sf-date">Date (YYYY or YYYY-MM)</label><input type="text" id="sf-date" value="${esc(s.date)}"></span>
+    </div>
+    <div class="frow inline">
+      <span style="flex:1;"><label for="sf-kind">Kind</label><select id="sf-kind">${["report","paper","dataset","news","filing","web-tool capture","model run"].map(k=>`<option ${s.kind===k?"selected":""}>${k}</option>`).join("")}</select></span>
+      <span style="flex:1;"><label for="sf-access">Access</label><select id="sf-access">${["open","registration","paywall"].map(k=>`<option ${s.access===k?"selected":""}>${k}</option>`).join("")}</select></span>
+    </div>
+    <div class="frow"><label for="sf-url">URL / DOI</label><input type="url" id="sf-url" value="${esc(s.url)}"></div>
+    <div class="frow"><label for="sf-notes">Notes / freshness policy / key excerpt</label><textarea id="sf-notes">${esc(s.notes)}</textarea></div>
+  </div>
+  <div class="dlg-foot"><button class="btn" data-action="closeDlg">Cancel</button>
+    <button class="btn primary" data-action="saveSource" data-id="${esc(s.id||"")}">${s.id?"Save":"Add source"}</button></div>`);
+}
+
+/* Shared result table — used live during a run and when re-opening a stored run. */
+function resultTableHTML(r){
+  if(r && r.artifacts && r.artifacts.length && !r.columns) return "";
+  if(!r || !r.columns) return `<div class="empty">This run has no stored result table. Runs recorded manually keep only the summary you typed.</div>`;
+  return `<div class="gridwrap"><table class="grid"><thead><tr>${r.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead>
+    <tbody>${r.rows.map(row=>`<tr>${r.columns.map(c=>`<td>${esc(typeof row[c]==="number" ? row[c].toLocaleString("en-US") : (row[c]==null?"—":row[c]))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function runResultHTML(runId){
+  const run = db.runs.find(x=>x.id===runId);
+  if(!run) return `<div class="dlg-body">Run not found.</div>`;
+  const m = db.models.find(x=>x.id===run.modelId);
+  const r = run.result;
+  return `
+  <div class="dlg-head"><span>Result — ${esc(run.name)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <div class="conf-note">${esc(m?m.name:"?")} · ${esc(run.date)} · ${esc(run.runner||"user")}</div>
+    <p style="font-size:0.84rem; margin:0.6rem 0;"><b>Parameters:</b> ${esc(run.params)}</p>
+    ${r&&r.summary?`<p style="font-size:0.84rem; margin:0.6rem 0;">${esc(r.summary)}</p>`:""}
+    ${r&&r.extraction==="artifact"?`<div class="notice">Figures read from these charts are estimates, not exact model output.</div>`:""}
+    ${(r&&r.artifacts||[]).map(a=>`<figure style="margin:0 0 0.9rem;"><img src="${esc(a.dataUri)}" alt="${esc(a.label)}" style="max-width:100%; border:1px solid var(--line); border-radius:6px;"><figcaption class="conf-note">${esc(a.label)}</figcaption></figure>`).join("")}
+    ${r&&r.rows&&r.rows.length?resultTableHTML(r):""}
+    ${r?`<div class="provenance">${esc(r.endpoint||"")}${r.ms?` · ${r.ms} ms`:""} · stored with run ${esc(run.id)}</div>`:""}
+    ${run.notes?`<p class="hint">${esc(run.notes)}</p>`:""}
+  </div>
+  <div class="dlg-foot">
+    ${run.sourceId?`<span class="conf-note" style="margin-right:auto;">✓ already in the library</span>`
+                  :`<button class="btn" data-action="promoteRun" data-id="${esc(run.id)}" style="margin-right:auto;">Save to library</button>`}
+    <button class="btn primary" data-action="closeDlg">Close</button>
+  </div>`;
+}
+function openRunResult(id){ openDlg(runResultHTML(id)); }
+
+let highlightRunId = null;
+function flashRun(){
+  const id = highlightRunId; if(!id) return;
+  highlightRunId = null;
+  const el = document.querySelector(`[data-runrow="${id}"]`);
+  if(!el) return;
+  el.scrollIntoView({ behavior:"smooth", block:"center" });
+  setTimeout(()=>{ const e2 = document.querySelector(`[data-runrow="${id}"]`); if(e2) e2.classList.remove("run-hi"); }, 3200);
+}
+
+/* A compact rendering of the top rows, so a run promoted to the library reads
+   as evidence ("who got what, for what") rather than just a row count.
+   Column-agnostic: identifying columns first, any amount column in brackets. */
+function runHighlights(data){
+  if(data && data.artifacts && data.artifacts.length && (!data.rows || !data.rows.length))
+    return `Captured ${data.artifacts.length} chart(s): ${data.artifacts.map(a=>a.label).join("; ")}. Figures read from them are estimates.`;
+  if(!data || !data.rows || !data.rows.length) return "";
+  const amountCol = data.columns.find(c=>/amount|value/i.test(c));
+  const idCols = data.columns.filter(c=>c!==amountCol).slice(0,3);
+  const fmt = v => v==null ? "" : (typeof v==="number" ? v.toLocaleString("en-US",{maximumFractionDigits:0}) : String(v));
+  const top = data.rows.slice(0,5).map(r=>{
+    const label = idCols.map(c=>fmt(r[c])).filter(v=>v && v!=="—").join(" — ");
+    return amountCol ? `${label} [${fmt(r[amountCol])}]` : label;
+  }).filter(Boolean);
+  const more = data.rows.length - top.length;
+  return `Top rows: ${top.join(" · ")}${more>0?` …and ${more} more.`:""}`;
+}
+
+/* Direct execution: LODESTONE calls the model's API itself and records the run
+   with full provenance, so nothing is transcribed by hand. */
+function runNowForm(modelId, state){
+  const m = db.models.find(x=>x.id===modelId);
+  const spec = modelRun(modelId);
+  state = state || {};
+  const fields = spec.params.map(p=>`<div class="frow"><label for="rn-${esc(p.name)}">${esc(p.label)}</label>
+    <input type="text" id="rn-${esc(p.name)}" value="${esc(state.params && state.params[p.name] !== undefined ? state.params[p.name] : p.value)}"></div>`).join("");
+  let results = "";
+  if(state.error) results = `<div class="notice" style="border-left-color:var(--danger); background:var(--danger-soft);">${esc(state.error)}</div>`;
+  else if(state.result){
+    const r = state.result;
+    const arts = (r.artifacts||[]).map(a=>`<figure style="margin:0 0 0.9rem;">
+        <img src="${esc(a.dataUri)}" alt="${esc(a.label)}" style="max-width:100%; border:1px solid var(--line); border-radius:6px;">
+        <figcaption class="conf-note" style="margin-top:0.25rem;">${esc(a.label)}</figcaption>
+      </figure>`).join("");
+    const extraction = r.extraction==="artifact"
+      ? `<div class="notice"><b>Charts, not numbers.</b> This tool has no data export, so the run captures the plots exactly as the model drew them. Any figure you read off these charts is an <b>estimate</b> — record it at <i>probable</i> confidence at best, never <i>established</i>.</div>`
+      : r.extraction==="exact"
+      ? `<div class="notice" style="border-left-color:var(--good); background:var(--good-soft);"><b>Exact values.</b> Recalculated by the model's own engine, so these figures are model output and can be cited as such.</div>`
+      : r.extraction==="cached"
+      ? `<div class="notice"><b>Cached values.</b> Read from the workbook without recalculation — they reflect whatever scenario was last saved, not your inputs.</div>`
+      : "";
+    results = `<div class="tsec"><h4>Result</h4>
+      <p style="font-size:0.84rem; margin:0 0 0.6rem;">${esc(r.summary)}</p>
+      ${extraction}
+      ${arts}
+      ${r.rows&&r.rows.length?resultTableHTML(r):""}
+      <div class="provenance">${esc(r.endpoint)} · ${r.rows?`${r.rows.length} row(s)`:`${(r.artifacts||[]).length} chart(s)`} · ${r.ms} ms · recorded as ${esc(state.runId||"—")}</div>
+      <p class="hint">Saved with the full table under <b>Recorded runs</b>, at the top of Models &amp; runs.</p>
+    </div>`;
+  }
+  openDlg(`
+  <div class="dlg-head"><span>Run — ${esc(m.name)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <p class="hint" style="margin-top:0;">LODESTONE calls this model's public API directly and captures the run for you. ${esc(spec.note||"")}</p>
+    ${fields}
+    ${results}
+  </div>
+  <div class="dlg-foot">
+    ${state.runId?`<button class="btn" data-action="gotoRun" data-id="${esc(state.runId)}" style="margin-right:auto;">Show the saved record</button>`:""}
+    <button class="btn" data-action="closeDlg">Close</button>
+    <button class="btn primary" data-action="doRun" data-id="${esc(modelId)}">${state.busy?"Running…":"▶ Run"}</button>
+  </div>`);
+}
+
+async function doRun(modelId){
+  const spec = modelRun(modelId);
+  const params = {};
+  spec.params.forEach(p=>{ const el = document.getElementById("rn-"+p.name); params[p.name] = el ? el.value.trim() : p.value; });
+  runNowForm(modelId, { params, busy:true });
+  try {
+    const resp = await fetch("api/run", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({modelId, params}) });
+    const data = await resp.json();
+    if(!resp.ok){ runNowForm(modelId, { params, error: data.error || `Run failed (${resp.status})` }); return; }
+    const m = db.models.find(x=>x.id===modelId);
+    const run = {
+      id: uid("run"), modelId,
+      name: `${m.name} — ${new Date().toISOString().slice(0,16).replace("T"," ")}`,
+      params: Object.entries(params).map(([k,v])=>`${k}=${v}`).join("; "),
+      outputs: `${data.summary} ${runHighlights(data)}`.trim(),
+      notes: `Executed by LODESTONE against ${data.endpoint} in ${data.ms} ms.`,
+      date: today(), runner: "LODESTONE (automatic)", sourceId: null,
+      // Keep the rows so the result stays re-viewable after the dialog closes.
+      result: { columns: data.columns, rows: data.rows, summary: data.summary, endpoint: data.endpoint, ms: data.ms,
+                artifacts: data.artifacts, extraction: data.extraction, appliedParams: data.appliedParams },
+    };
+    db.runs.push(run); highlightRunId = run.id; save();
+    runNowForm(modelId, { params, result: data, runId: run.id });
+    toast(`Run recorded as ${run.id}`);
+  } catch(e) {
+    // Distinguish "the request failed" from "the request succeeded but
+    // displaying it threw" — the run may already be recorded.
+    const networkish = (e instanceof TypeError) && /fetch|network|Failed to fetch/i.test(String(e.message));
+    const saved = db.runs.length && db.runs[db.runs.length-1].modelId === modelId;
+    runNowForm(modelId, { params, error: networkish
+      ? "Could not reach the local server — is `npm start` running?"
+      : `${saved ? "The run completed and was recorded, but displaying it failed" : "The run failed"}: ${e && e.message ? e.message : e}` });
+  }
+}
+
+function runForm(modelId){
+  const m = db.models.find(x=>x.id===modelId);
+  openDlg(`
+  <div class="dlg-head"><span>Record a run — ${esc(m.name)}</span><button class="btn small" data-action="closeDlg">✕</button></div>
+  <div class="dlg-body">
+    <p style="font-size:0.78rem; color:var(--ink-3); margin-top:0;">Guided-manual capture: run the tool in another tab (<a href="${esc(m.url)}" target="_blank" rel="noopener">open ↗</a>), then record exactly what you did and what it returned. The run becomes citable evidence with provenance.</p>
+    <div class="frow"><label for="rf-name">Run / scenario name</label><input type="text" id="rf-name" placeholder="e.g., 45X-phaseout-compare"></div>
+    <div class="frow"><label for="rf-params">Parameters as entered</label><textarea id="rf-params" placeholder="credit = 0% and 10%; mineral = lithium; horizon = 2026–2035"></textarea></div>
+    <div class="frow"><label for="rf-out">Outputs observed (values, not impressions)</label><textarea id="rf-out" placeholder="2035 domestic premium: $X/t at 0% credit vs $Y/t at 10%…"></textarea></div>
+    <div class="frow"><label for="rf-notes">Notes / interpretation / caveats</label><textarea id="rf-notes"></textarea></div>
+  </div>
+  <div class="dlg-foot"><button class="btn" data-action="closeDlg">Cancel</button>
+    <button class="btn primary" data-action="saveRun" data-model="${esc(modelId)}">Record run</button></div>`);
+}
+
+/* ---------------- Brief / exports ---------------- */
+function buildMemo(){
+  const sel = db.cards.filter(c=>briefSel.has(c.id) && c.status!=="deprecated");
+  const usedSources = [];
+  const srcNum = id => { let i = usedSources.indexOf(id); if(i===-1){ usedSources.push(id); i = usedSources.length-1; } return i+1; };
+  let md = `# Decision memo — ${db.ws.title}\n\n**Decision question:** ${db.ws.question}\n\n**Decision criteria:** ${db.ws.criteria.join("; ")}\n\n_Generated ${today()} from the LODESTONE workspace (${sel.length} cards). Confidence labels: established / probable / contested / unverified. Cards with no citations are marked unverified by rule._\n\n`;
+  Object.keys(TYPES).forEach(t=>{
+    const cs = sel.filter(c=>c.type===t);
+    if(!cs.length) return;
+    md += `## ${TYPES[t].plural}\n\n`;
+    cs.forEach(c=>{
+      const refs = c.citations.map(x=>`[${srcNum(x.sourceId)}${x.locator?`, ${x.locator}`:""}]`).join("");
+      md += `- **${c.id}** (${effConfidence(c)}${c.status!=="active"?`, ${c.status}`:""}) — ${c.statement}${refs? " "+refs:""}\n`;
+      if(c.detail) md += `  - ${c.detail}\n`;
+      if(hasConflict(c)) md += `  - ⚠ Unresolved conflict — see linked cards.\n`;
+    });
+    md += "\n";
+  });
+  if(usedSources.length){
+    md += `## Sources\n\n`;
+    usedSources.forEach((id,i)=>{
+      const s = source(id);
+      if(s) md += `${i+1}. ${s.author} — *${s.title}* (${s.date}). ${s.url||""}${s.access!=="open"?` [${s.access}]`:""}\n`;
+    });
+  }
+  md += `\n---\n_Prototype export. In the deployed system this brief would carry the immutable snapshot IDs of every citation (NFR-6) and the audit log of card provenance (FR-G2)._\n`;
+  return md;
+}
+function buildBiblio(){
+  let md = `# Bibliography — ${db.ws.title}\n\n`;
+  db.lists.forEach(l=>{
+    md += `## ${l.title}\n\n`;
+    l.items.forEach((it,i)=>{ const s=source(it.sourceId); if(s){ md += `${i+1}. ${s.author} — *${s.title}* (${s.date}). ${s.url||""}\n${it.note?`   — ${it.note}\n`:""}`; } });
+    md += "\n";
+  });
+  md += `## Full library\n\n`;
+  db.sources.forEach(s=>{ md += `- ${s.author} — *${s.title}* (${s.date}). ${s.kind}, ${s.access}. ${s.url||""}\n`; });
+  return md;
+}
+async function offerDownload(filename, data){
+  if(window.claude && window.claude.downloads){
+    try { await window.claude.downloads.save({filename, data}); toast("Saved: " + filename); return; }
+    catch(e){
+      if(e && e.code==="declined"){ toast("Save declined"); return; }
+      if(e && e.code==="rate_limited"){ toast("A save prompt is already open — try again shortly"); return; }
+      /* fall through to clipboard on unavailable/etc. */
+    }
+  }
+  try { await navigator.clipboard.writeText(data); toast("Download unavailable here — copied to clipboard instead"); }
+  catch(e){ toast("Could not save or copy — select text from the preview and copy manually"); }
+}
+
+/* ---------------- Search ---------------- */
+function runSearch(){
+  const qEl = document.getElementById("analystQ");
+  const q = (qEl.value||"").trim().toLowerCase();
+  const out = document.getElementById("searchResults");
+  if(!q){ out.innerHTML = `<div class="empty">Type a query.</div>`; return; }
+  const mark = txt => esc(txt).replace(new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","ig"), "<mark>$1</mark>");
+  const hits = [];
+  db.cards.forEach(c=>{
+    if((c.statement+" "+c.detail+" "+c.tags.join(" ")).toLowerCase().includes(q))
+      hits.push(`<div class="hit"><span class="where">Card ${cardRef(c.id)} · ${TYPES[c.type].label} · ${esc(effConfidence(c))}</span><br>${mark(c.statement)}${c.detail?`<br><span style="font-size:0.74rem;color:var(--ink-2);">${mark(c.detail)}</span>`:""}</div>`);
+  });
+  db.sources.forEach(s=>{
+    if((s.title+" "+s.author+" "+s.notes).toLowerCase().includes(q))
+      hits.push(`<div class="hit"><span class="where">Source · ${sourceRef(s.id)} (${esc(s.date)})</span><br>${mark(s.title)}${s.notes?`<br><span style="font-size:0.74rem;color:var(--ink-2);">${mark(s.notes)}</span>`:""}</div>`);
+  });
+  db.runs.forEach(r=>{
+    if((r.name+" "+r.params+" "+r.outputs+" "+r.notes).toLowerCase().includes(q))
+      hits.push(`<div class="hit"><span class="where">Model run · ${esc(r.date)}</span><br>${mark(r.name)}<br><span style="font-size:0.74rem;">${mark(r.outputs)}</span></div>`);
+  });
+  out.innerHTML = hits.length? hits.join("") : `<div class="empty">No matches in cards, sources, or runs. (In the deployed system, the assistant would offer web-search mode here — FR-A2.)</div>`;
+}
+
+/* ---------------- Event handling ---------------- */
+document.addEventListener("click", ev=>{
+  const el = ev.target.closest("[data-action]");
+  if(!el) return;
+  const a = el.dataset.action;
+
+  if(a==="nav"){ view = el.dataset.view; if(view==="board"&&el.dataset.type){filters.type=el.dataset.type;} render(); }
+  else if(a==="navtype"){ view="board"; filters.type = el.dataset.type; filters.q=""; render(); }
+  else if(a==="navaudit"){ view="analyst"; render(); const id = {needs:"audit-needs",conflicts:"audit-conflicts",stale:"audit-stale"}[el.dataset.audit]; const t=document.getElementById(id); if(t) t.scrollIntoView({behavior:"smooth"}); }
+  else if(a==="ftype"){ filters.type = el.dataset.type; render(); }
+  else if(a==="ftag"){ filters.tag = (filters.tag===el.dataset.tag? "" : el.dataset.tag); render(); }
+  else if(a==="newCard"){ cardForm(null); }
+  else if(a==="editCard"){ cardForm(card(el.dataset.id)); }
+  else if(a==="trace"){ openTrace(el.dataset.id); }
+  else if(a==="sourceDetail"){ hideTip(); openSource(el.dataset.id); }
+  else if(a==="traceBack"){ traceBack(); }
+  else if(a==="traceCrumb"){ traceGoto(+el.dataset.i); }
+  else if(a==="showOnBoard"){
+    const id = el.dataset.id;
+    closeDlg(); view="board"; filters={type:"all", q:id, tag:""}; render();
+    toast(`Board filtered to ${id} — clear the filter box to see everything`);
+  }
+  else if(a==="addLinkFromTrace"){
+    const rootId = el.dataset.id, rel = document.getElementById("lk-rel").value, to = document.getElementById("lk-to").value;
+    const c = card(rootId);
+    if(!c || !to){ toast("Pick a card to link to"); return; }
+    if(c.links.some(l=>l.to===to && l.rel===rel)){ toast("That link already exists"); return; }
+    c.links.push({to, rel}); c.updated = today(); save();
+    openDlg(traceHTML(rootId)); dlg.classList.add("trace");
+    toast(`Linked: ${rootId} ${rel} ${to}`);
+  }
+  else if(a==="closeDlg"){ closeDlg(); }
+  else if(a==="draftAddCite"){ collectCardForm(); draft.citations.push({sourceId:document.getElementById("cf-cite-src").value, locator:document.getElementById("cf-cite-loc").value.trim()}); renderCardForm(); }
+  else if(a==="draftRmCite"){ collectCardForm(); draft.citations.splice(+el.dataset.i,1); renderCardForm(); }
+  else if(a==="draftAddLink"){ collectCardForm(); const to=document.getElementById("cf-link-to").value; if(to) draft.links.push({to, rel:document.getElementById("cf-link-rel").value}); renderCardForm(); }
+  else if(a==="draftRmLink"){ collectCardForm(); draft.links.splice(+el.dataset.i,1); renderCardForm(); }
+  else if(a==="saveCard"){
+    collectCardForm();
+    if(!draft.statement){ toast("Statement is required"); return; }
+    if(!draft.id){
+      draft.id = uid(TYPES[draft.type].prefix);
+      draft.created = today(); draft.updated = today();
+      db.cards.push(draft);
+    } else {
+      const i = db.cards.findIndex(c=>c.id===draft.id);
+      draft.updated = today();
+      db.cards[i] = draft;
+    }
+    save(); closeDlg(); render(); toast("Card saved");
+  }
+  else if(a==="deprecateCard"){ collectCardForm(); draft.status="deprecated"; const i=db.cards.findIndex(c=>c.id===draft.id); db.cards[i]=draft; save(); closeDlg(); render(); toast("Card deprecated (kept for the record; excluded from views and briefs)"); }
+  else if(a==="newSource"){ sourceForm(null); }
+  else if(a==="editSource"){ sourceForm(source(el.dataset.id)); }
+  else if(a==="saveSource"){
+    const id = el.dataset.id;
+    const s = id? source(id) : {id:uid("s"), addedAt:today()};
+    s.title = document.getElementById("sf-title").value.trim();
+    s.author = document.getElementById("sf-author").value.trim();
+    s.date = document.getElementById("sf-date").value.trim();
+    s.kind = document.getElementById("sf-kind").value;
+    s.access = document.getElementById("sf-access").value;
+    s.url = document.getElementById("sf-url").value.trim();
+    s.notes = document.getElementById("sf-notes").value.trim();
+    if(!s.title){ toast("Title is required"); return; }
+    if(!id) db.sources.push(s);
+    save(); closeDlg(); render(); toast("Source saved");
+  }
+  else if(a==="delSource"){ const n=citingCards(el.dataset.id).length; if(n){ toast("Cited by cards — cannot delete"); return; } db.sources = db.sources.filter(s=>s.id!==el.dataset.id); db.lists.forEach(l=>l.items=l.items.filter(it=>it.sourceId!==el.dataset.id)); save(); render(); toast("Source deleted"); }
+  else if(a==="newList"){ const t = prompt("Reading-list title:"); if(t){ db.lists.push({id:uid("rl"), title:t, items:[]}); save(); render(); } }
+  else if(a==="delList"){ db.lists = db.lists.filter(l=>l.id!==el.dataset.id); save(); render(); }
+  else if(a==="listAdd"){ const l = db.lists.find(x=>x.id===el.dataset.list); const sel = document.getElementById("addTo-"+l.id); if(sel && sel.value){ l.items.push({sourceId:sel.value, note:""}); save(); render(); } }
+  else if(a==="listRemove"){ const l = db.lists.find(x=>x.id===el.dataset.list); l.items.splice(+el.dataset.i,1); save(); render(); }
+  else if(a==="listMove"){ const l = db.lists.find(x=>x.id===el.dataset.list); const i=+el.dataset.i, d=+el.dataset.dir; const [it]=l.items.splice(i,1); l.items.splice(i+d,0,it); save(); render(); }
+  else if(a==="recordRun"){ runForm(el.dataset.id); }
+  else if(a==="runNow"){ runNowForm(el.dataset.id); }
+  else if(a==="viewRun"){ openRunResult(el.dataset.id); }
+  else if(a==="gotoRun"){ closeDlg(); highlightRunId = el.dataset.id; view="models"; render(); }
+  else if(a==="doRun"){ doRun(el.dataset.id); }
+  else if(a==="saveRun"){
+    const name = document.getElementById("rf-name").value.trim();
+    const params = document.getElementById("rf-params").value.trim();
+    const outputs = document.getElementById("rf-out").value.trim();
+    if(!name || !outputs){ toast("Name and outputs are required — record what the tool actually returned"); return; }
+    db.runs.push({id:uid("run"), modelId:el.dataset.model, name, params, outputs, notes:document.getElementById("rf-notes").value.trim(), date:today(), runner:"user", sourceId:null});
+    save(); closeDlg(); render(); toast("Run recorded");
+  }
+  else if(a==="delRun"){ db.runs = db.runs.filter(r=>r.id!==el.dataset.id); save(); render(); }
+  else if(a==="promoteRun"){
+    const r = db.runs.find(x=>x.id===el.dataset.id);
+    const m = db.models.find(x=>x.id===r.modelId);
+    const s = {id:uid("s"), kind:"model run", title:`Model run: ${r.name} (${m?m.name:"?"})`, author:"Workspace model run", date:r.date, url:m?m.url:"", access:"open", notes:`Params: ${r.params} | Outputs: ${r.outputs}${r.notes?` | Notes: ${r.notes}`:""}`, addedAt:today()};
+    db.sources.push(s); r.sourceId = s.id; save(); render(); toast("Run saved to library — it can now be cited by cards");
+  }
+  else if(a==="runSearch"){ runSearch(); }
+  else if(a==="briefToggle"){ if(el.checked) briefSel.add(el.dataset.id); else briefSel.delete(el.dataset.id); }
+  else if(a==="briefAll"){ briefSel = new Set(db.cards.filter(c=>c.status!=="deprecated").map(c=>c.id)); render(); }
+  else if(a==="briefNone"){ briefSel = new Set(); render(); }
+  else if(a==="genBrief"){ document.getElementById("memoPreview").textContent = buildMemo(); }
+  else if(a==="dlMemo"){ offerDownload("lodestone-memo.md", buildMemo()); }
+  else if(a==="dlBiblio"){ offerDownload("lodestone-bibliography.md", buildBiblio()); }
+  else if(a==="dlJson"){ offerDownload("lodestone-workspace.json", JSON.stringify(db, null, 2)); }
+  else if(a==="saveWs"){
+    db.ws.title = document.getElementById("setTitle").value.trim() || db.ws.title;
+    db.ws.question = document.getElementById("setQ").value.trim();
+    db.ws.criteria = document.getElementById("setCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
+    save(); render(); toast("Workspace settings saved");
+  }
+  else if(a==="resetSeed"){
+    if(confirm("Replace the current workspace with the seeded demo data? Unexported changes will be lost.")){
+      db = seedData(); save(); briefSel=null; render(); toast("Workspace reset to seed");
+    }
+  }
+});
+
+document.addEventListener("input", ev=>{
+  if(ev.target.id==="boardQ"){ filters.q = ev.target.value; const scroll=window.scrollY; render(); const q=document.getElementById("boardQ"); q.focus(); q.setSelectionRange(q.value.length,q.value.length); window.scrollTo(0,scroll); }
+});
+document.addEventListener("keydown", ev=>{
+  if(ev.key==="Enter" && ev.target.id==="analystQ"){ runSearch(); }
+});
+document.addEventListener("change", ev=>{
+  if(ev.target.id==="importFile"){
+    const f = ev.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if(!data.cards || !data.sources || !data.ws) throw new Error("not a LODESTONE workspace");
+        db = data; save(); briefSel=null; render(); toast("Workspace imported");
+      } catch(e){ toast("Import failed: " + e.message); }
+    };
+    reader.readAsText(f);
+  }
+});
+
+/* ---------------- Toast ---------------- */
+let toastTimer = null;
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2600);
+}
+
+/* ---------------- Init ---------------- */
+load();
+render();
+detectCaps();
+</script>

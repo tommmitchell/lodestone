@@ -1,0 +1,15 @@
+{
+  "name": "lodestone",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LODESTONE evidence workbench — local deployment with live Claude assistant (Opus 5 / Sonnet 5)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.0",
+    "puppeteer-core": "^25.5.0",
+    "xlsx": "^0.18.5"
+  }
+}

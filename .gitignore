@@ -1,0 +1,21 @@
+node_modules/
+.env
+.spend.json
+
+# Evidence content. The tool is public; the analysis is not.
+# Start from public/seed.example.js.
+public/seed.js
+
+# Held back pending a decision: the specification PDF is tool documentation,
+# but it names the specific funding question it was written against.
+# Delete this line to publish it.
+LODESTONE-Specification.pdf
+
+# Third-party models. Excluded because they are either machine-specific or not
+# ours to redistribute — see models/README.md for how to obtain each.
+models/blast-venv/
+models/BLAST-Lite/
+models/*.xlsm
+models/*.xlsx
+
+.DS_Store

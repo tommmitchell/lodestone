@@ -1610,6 +1610,12 @@ function viewSettings(){
     <p class="hint" style="margin:-0.2rem 0 0.6rem;">With web access on, anything the assistant reads from a page is <b>untrusted data, not instructions</b>, and is outside this workspace until it is captured as a source. Web search and fetch are billed by Anthropic in addition to tokens.</p>
     <div class="frow"><label for="setRounds">Max tool rounds per chat request (1–16). Named tasks such as Justify may use up to 14.</label>
       <input type="number" id="setRounds" min="1" max="16" value="${esc(db.settings.maxToolRounds)}"></div>
+    <div class="frow"><label for="setLimit">Daily spend cap (USD). Assistant calls are refused once the day's spend reaches it — <b>the assistant cannot raise this itself</b>.</label>
+      <input type="number" id="setLimit" min="0" max="500" step="0.5" value="${serverCaps && serverCaps.dailyLimitUsd != null ? esc(serverCaps.dailyLimitUsd) : ""}" ${serverCaps ? "" : "disabled"}>
+    </div>
+    <p class="hint" style="margin:-0.2rem 0 0.6rem;">${serverCaps
+      ? `Spent today: <b>$${(serverCaps.spentTodayUsd||0).toFixed(2)}</b> of $${(serverCaps.dailyLimitUsd||0).toFixed(2)} · current value comes from ${esc(serverCaps.limitSource||"the server")}. Saving here overrides <code>.env</code> from now on. A populate pass with web access on can cost $0.50–$1.00; ordinary questions are one to two cents.`
+      : `Requires the local server — start it with <code>npm start</code>.`}</p>
     <div class="frow"><label for="setApproval">Approval mode (applies to assistant edits — P2)</label>
       <select id="setApproval">
         <option value="staged" ${db.settings.approvalMode==="staged"?"selected":""}>Staged — review before anything is committed</option>
@@ -2148,7 +2154,25 @@ document.addEventListener("click", ev=>{
     db.settings.webTools = document.getElementById("setWeb").value === "on";
     db.settings.approvalMode = document.getElementById("setApproval").value;
     db.settings.maxToolRounds = rounds;
-    save(); render(); toast("Assistant settings saved");
+    save();
+    const limEl = document.getElementById("setLimit");
+    const lim = limEl && limEl.value !== "" ? Number(limEl.value) : null;
+    if(lim != null && serverCaps && lim !== serverCaps.dailyLimitUsd){
+      // A typo here spends real money, so make a large rise deliberate.
+      if(lim > 20 && !confirm(`Set the daily assistant spend cap to $${lim.toFixed(2)}? That is well above the usual working range.`)){
+        render(); return;
+      }
+      fetch("api/limit", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({usd: lim})})
+        .then(r=>r.json())
+        .then(d=>{
+          if(d.error){ toast(d.error); return; }
+          if(serverCaps){ serverCaps.dailyLimitUsd = d.dailyLimitUsd; serverCaps.limitSource = d.limitSource; }
+          render(); toast(`Settings saved · daily cap now $${d.dailyLimitUsd.toFixed(2)}`);
+        })
+        .catch(()=>toast("Settings saved, but the daily cap could not be reached on the server"));
+      return;
+    }
+    render(); toast("Assistant settings saved");
   }
   else if(a==="resetSeed"){
     if(confirm("Replace the current workspace with the seeded demo data? Unexported changes will be lost.")){

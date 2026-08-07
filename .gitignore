@@ -6,6 +6,7 @@ node_modules/
 .env.*
 !.env.example
 .spend.json
+.config.json
 
 # Evidence content. The tool is public; the analysis is not.
 # Start from public/seed.example.js.

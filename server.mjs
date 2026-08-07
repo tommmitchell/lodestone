@@ -35,8 +35,29 @@ const PRICES = {
   "claude-sonnet-5": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 1, output: 5 },
 };
-const DAILY_LIMIT_USD = Number(process.env.LODESTONE_DAILY_LIMIT_USD ?? "2");
 const LEDGER_PATH = path.join(here, ".spend.json");
+const CONFIG_PATH = path.join(here, ".config.json");
+
+/* The daily cap is the user's to set, and only the user's — the assistant is
+   forbidden from raising its own budget (spec section 1.2). Precedence:
+   a value saved from the interface wins, because it is the most recent
+   explicit intent; otherwise the environment; otherwise $2. `limitSource` is
+   reported to the interface so a value set in .env that is being overridden
+   does not look like the app ignoring it. */
+let savedLimit = null;
+try { savedLimit = JSON.parse(readFileSync(CONFIG_PATH, "utf8")).dailyLimitUsd ?? null; } catch {}
+const ENV_LIMIT = process.env.LODESTONE_DAILY_LIMIT_USD;
+let DAILY_LIMIT_USD = Number(savedLimit ?? ENV_LIMIT ?? "2");
+let limitSource = savedLimit != null ? "saved in the interface" : (ENV_LIMIT != null ? "LODESTONE_DAILY_LIMIT_USD in .env" : "default");
+
+async function setDailyLimit(usd) {
+  const v = Number(usd);
+  if (!isFinite(v) || v < 0 || v > 500) throw new Error("The daily cap must be a number between 0 and 500.");
+  DAILY_LIMIT_USD = Math.round(v * 100) / 100;
+  limitSource = "saved in the interface";
+  await writeFile(CONFIG_PATH, JSON.stringify({ dailyLimitUsd: DAILY_LIMIT_USD }, null, 1));
+  return DAILY_LIMIT_USD;
+}
 
 let ledger = {};
 try { ledger = JSON.parse(await readFile(LEDGER_PATH, "utf8")); } catch {}
@@ -105,7 +126,7 @@ async function handleAgentTurn(body) {
     return {
       status: 429,
       json: {
-        error: `Daily assistant spend limit reached ($${todaySpend().toFixed(2)} of $${DAILY_LIMIT_USD.toFixed(2)}). Raise LODESTONE_DAILY_LIMIT_USD in lodestone/.env and restart the server, or wait until tomorrow.`,
+        error: `Daily assistant spend limit reached ($${todaySpend().toFixed(2)} of $${DAILY_LIMIT_USD.toFixed(2)}). Raise the daily cap in Settings & data — no restart needed — or wait until tomorrow.`,
       },
     };
   }
@@ -899,6 +920,22 @@ const server = http.createServer(async (req, res) => {
 
   // Lets the page discover what this deployment can actually do. The published
   // artifact gets no response at all, so its UI honestly reports "local only".
+  if (req.method === "POST" && url.pathname === "/api/limit") {
+    let raw = "";
+    req.setEncoding("utf8");
+    for await (const chunk of req) { raw += chunk; if (raw.length > 10_000) break; }
+    try {
+      const body = JSON.parse(raw || "{}");
+      const v = await setDailyLimit(body.usd);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ dailyLimitUsd: v, spentTodayUsd: todaySpend(), limitSource }));
+    } catch (e) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: e.message || "Could not set the daily cap." }));
+    }
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/capabilities") {
     res.writeHead(200, { "content-type": "application/json" });
     const r = runnerReadiness();
@@ -907,6 +944,9 @@ const server = http.createServer(async (req, res) => {
       // module exists. Claiming availability without credentials is the same
       // failure mode as a model badge that lies about runnability.
       assistant: !!process.env.MY_ANTHROPIC_KEY,
+      dailyLimitUsd: DAILY_LIMIT_USD,
+      spentTodayUsd: Math.round(todaySpend() * 10000) / 10000,
+      limitSource,
       run: runnableModelIds(),
       ready: r.ready,
       reason: r.reason,

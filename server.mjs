@@ -64,70 +64,6 @@ const client = new Anthropic({ apiKey: process.env.MY_ANTHROPIC_KEY ?? null });
 
 // Structured-output schema: every assistant reply is a cited answer plus zero
 // or more proposed cards for human review (FR-A1/A3/A5).
-const REPLY_SCHEMA = {
-  type: "object",
-  properties: {
-    answer: {
-      type: "string",
-      description:
-        "The answer, in plain prose. Cite evidence inline using card IDs in square brackets like [F-1] and source IDs in parentheses like (s5). If the workspace evidence is insufficient, say so explicitly.",
-    },
-    evidence_gaps: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "Specific gaps: claims that could not be grounded in the workspace, or sources that should be ingested.",
-    },
-    proposals: {
-      type: "array",
-      description:
-        "Candidate evidence cards (0-4). Propose only claims that are grounded in workspace sources and not already on the board.",
-      items: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: [
-              "fact",
-              "opportunity",
-              "tradeoff",
-              "open_question",
-              "risk",
-              "assumption",
-              "recommendation",
-            ],
-          },
-          statement: { type: "string", description: "One sentence, <= 280 chars." },
-          detail: { type: "string", description: "Caveats and context. May be empty." },
-          confidence: {
-            type: "string",
-            enum: ["established", "probable", "contested", "unverified"],
-          },
-          tags: { type: "array", items: { type: "string" } },
-          citations: {
-            type: "array",
-            description:
-              "Workspace source IDs supporting the statement. Use ONLY IDs that exist in the workspace (e.g. s5). Empty for open questions.",
-            items: {
-              type: "object",
-              properties: {
-                sourceId: { type: "string" },
-                locator: { type: "string" },
-              },
-              required: ["sourceId", "locator"],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ["type", "statement", "detail", "confidence", "tags", "citations"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["answer", "evidence_gaps", "proposals"],
-  additionalProperties: false,
-};
-
 const COMMON_RULES = `You are the analyst assistant inside LODESTONE, an evidence workbench. This prototype is intended to support decision making about possible future funding decisions, including an analysis of which funding choices may lead to the greatest economic benefit.
 
 Core rules — these implement the tool's provenance principles:
@@ -137,64 +73,27 @@ Core rules — these implement the tool's provenance principles:
 4. CONFIDENCE DISCIPLINE. "established" needs multiple independent sources; single-source claims are at most "probable"; disagreements are "contested"; anything ungrounded is "unverified".
 5. Citations in proposals must use source IDs that exist in the workspace. Never invent IDs.`;
 
-const MODE_INSTRUCTIONS = {
-  qa: `Mode: grounded Q&A (FR-A1). Answer the user's question from the workspace evidence. Where cards conflict (linked conflicts-with), present both sides and say what would resolve the disagreement. Keep answers focused — a decision-maker is reading.`,
-  redteam: `Mode: red-team (FR-A5). Adversarially challenge the workspace evidence relevant to the user's prompt (or, if no focus is given, the strongest-looking claims on the board). Find: the weakest citations, single-source facts treated as established, alternative interpretations of the same data, and assumptions that could invalidate recommendations. Be specific about which card each attack targets. Express your strongest attacks as proposed risk or open_question cards so they can be captured on the board. Do not soften findings.`,
-};
+/* Agent rules. The assistant now operates the workbench through tools rather
+   than receiving a serialized snapshot, so the guidance is about tool use and
+   the limits of its authority. Design principle 7 (interface parity): it can
+   see and do what the user can, through the same action layer. */
+const AGENT_RULES = `You operate LODESTONE through tools. The tools are the same actions the user performs through the interface — you have parity with them, no more and no less.
 
-function serializeWorkspace(ws) {
-  // Compact projection of the workspace for grounding. The browser sends its
-  // full state; we strip UI fields and cap sizes defensively.
-  const s = (v, n) => String(v ?? "").slice(0, n);
-  return JSON.stringify({
-    workspace: {
-      title: s(ws?.ws?.title, 200),
-      question: s(ws?.ws?.question, 500),
-      criteria: (ws?.ws?.criteria ?? []).slice(0, 12).map((c) => s(c, 200)),
-    },
-    cards: (ws?.cards ?? []).slice(0, 300).map((c) => ({
-      id: s(c.id, 20),
-      type: s(c.type, 20),
-      statement: s(c.statement, 600),
-      detail: s(c.detail, 800),
-      confidence: s(c.confidence, 20),
-      status: s(c.status, 20),
-      tags: (c.tags ?? []).slice(0, 10).map((t) => s(t, 40)),
-      citations: (c.citations ?? []).slice(0, 10).map((x) => ({
-        sourceId: s(x.sourceId, 20),
-        locator: s(x.locator, 100),
-      })),
-      links: (c.links ?? []).slice(0, 10).map((l) => ({ to: s(l.to, 20), rel: s(l.rel, 20) })),
-    })),
-    sources: (ws?.sources ?? []).slice(0, 300).map((src) => ({
-      id: s(src.id, 20),
-      kind: s(src.kind, 30),
-      title: s(src.title, 300),
-      author: s(src.author, 200),
-      date: s(src.date, 20),
-      access: s(src.access, 20),
-      notes: s(src.notes, 600),
-    })),
-    model_runs: (ws?.runs ?? []).slice(0, 50).map((r) => ({
-      id: s(r.id, 20),
-      name: s(r.name, 200),
-      params: s(r.params, 600),
-      outputs: s(r.outputs, 1000),
-      notes: s(r.notes, 600),
-      date: s(r.date, 20),
-    })),
-  });
-}
+Tool discipline:
+6. READ BEFORE YOU ASSERT. Never state what the workspace contains without having read it with a tool in this conversation. Prefer several small, targeted reads over asking the user to paste things.
+7. The workspace is live and the user may edit it while you work. Re-read rather than relying on an earlier result if precision matters.
+8. Tool results may report "truncated": true with a total. That means you are seeing part of the set — narrow your query rather than reasoning as if you saw everything.
+9. You may NOT: change assistant settings (model/actor, approval mode, round caps, budgets), import or reset the workspace, delete journal entries, or trigger file downloads. These are the user's alone. If asked, say so plainly.
+10. You are under the same editorial norms as a human editor, and no others. Where you encounter conflicting evidence, record it rather than suppress it (divergence is content). You are not required to hunt for counter-evidence beyond what the task calls for; the user invokes red-team mode when they want an adversarial pass.
 
-async function handleAssistant(body) {
-  const mode = body.mode === "redteam" ? "redteam" : "qa";
-  let model = typeof body.model === "string" ? body.model : "auto";
-  if (!MODELS.has(model)) model = MODE_DEFAULT_MODEL[mode];
+When you have finished using tools, simply reply with your answer in prose — do not describe or emit tool-call syntax in that text. Cite card IDs as [F-1] and source IDs as (s5) inside the answer; those become live links, and an ID that does not exist renders as a broken reference, so never invent one. If something could not be grounded in the workspace, say so in the answer.`;
 
-  const question = String(body.question ?? "").slice(0, 4000).trim();
-  if (!question && mode === "qa") {
-    return { status: 400, json: { error: "Question is required." } };
-  }
+async function handleAgentTurn(body) {
+  // One Claude call per request. The browser owns the conversation and the
+  // tool loop, because the workspace lives in its localStorage — the server
+  // cannot see it. See LODESTONE-Assistant-Spec.md section 2.1.
+  let model = typeof body.model === "string" ? body.model : "";
+  if (!MODELS.has(model)) model = "claude-sonnet-5";
 
   if (todaySpend() >= DAILY_LIMIT_USD) {
     return {
@@ -205,33 +104,20 @@ async function handleAssistant(body) {
     };
   }
 
-  const messages = [];
-  for (const turn of (body.history ?? []).slice(-6)) {
-    const q = String(turn.q ?? "").slice(0, 4000);
-    const a = String(turn.a ?? "").slice(0, 8000);
-    if (q && a) {
-      messages.push({ role: "user", content: q });
-      messages.push({ role: "assistant", content: a });
-    }
-  }
-  messages.push({
-    role: "user",
-    content: question || "Red-team the current evidence board.",
-  });
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  if (!messages.length) return { status: 400, json: { error: "messages are required." } };
+  const tools = Array.isArray(body.tools) ? body.tools : [];
+  const task = typeof body.task === "string" && body.task.trim() ? body.task.trim().slice(0, 4000) : "";
 
   const response = await client.messages.create({
     model,
     max_tokens: 8000,
-    // Stable instructions first (cached); volatile workspace snapshot after.
+    // Stable prefix first so it caches; the task recipe is stable per task.
     system: [
-      {
-        type: "text",
-        text: `${COMMON_RULES}\n\n${MODE_INSTRUCTIONS[mode]}`,
-        cache_control: { type: "ephemeral" },
-      },
-      { type: "text", text: `Current workspace evidence:\n${serializeWorkspace(body.workspace)}` },
+      { type: "text", text: `${COMMON_RULES}\n\n${AGENT_RULES}`, cache_control: { type: "ephemeral" } },
+      ...(task ? [{ type: "text", text: `Task recipe for this request:\n${task}` }] : []),
     ],
-    output_config: { format: { type: "json_schema", schema: REPLY_SCHEMA } },
+    tools,
     messages,
   });
 
@@ -239,28 +125,20 @@ async function handleAssistant(body) {
     return {
       status: 200,
       json: {
-        answer:
-          "The model declined this request (safety classifiers). Rephrase the question or narrow its scope.",
-        evidence_gaps: [],
-        proposals: [],
+        content: [{ type: "text", text: "The model declined this request (safety classifiers). Rephrase the question or narrow its scope." }],
+        stop_reason: "end_turn",
         model: response.model,
       },
     };
   }
 
-  const text = response.content.find((b) => b.type === "text")?.text ?? "";
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = { answer: text || "(empty response)", evidence_gaps: [], proposals: [] };
-  }
   const requestUsd = estimateCost(response.model, response.usage);
   await addSpend(requestUsd);
   return {
     status: 200,
     json: {
-      ...parsed,
+      content: response.content,
+      stop_reason: response.stop_reason,
       model: response.model,
       usage: {
         input_tokens: response.usage.input_tokens,
@@ -276,6 +154,7 @@ async function handleAssistant(body) {
     },
   };
 }
+
 
 function assistantError(e) {
   // Missing credentials surface as a plain Error at request-build time.
@@ -755,6 +634,78 @@ const RUNNERS = {
     return { columns: ds.columns, rows, summary, endpoint: url.toString() };
   },
 
+  // NLR Battery Policies and Incentives — federal and state policy database.
+  async m13(p) {
+    const key = process.env.NLR_API_KEY;
+    if (!key) {
+      const e = new Error("No NLR API key. Request a free one at developer.nlr.gov/signup, "
+        + "add NLR_API_KEY to lodestone/.env, and restart the server.");
+      e.userFacing = true;
+      throw e;
+    }
+    const url = new URL("https://developer.nlr.gov/api/battery-policies/v1/policies.json");
+    url.searchParams.set("api_key", key);
+    for (const f of ["jurisdiction_type", "record_type", "status", "state", "topic", "battery"]) {
+      const v = p[f] == null ? "" : String(p[f]).trim();
+      if (v) url.searchParams.set(f, v);
+    }
+    const limit = Math.min(Math.max(Number(p.limit) || 25, 1), 200);
+    url.searchParams.set("limit", String(limit));
+
+    // The recorded endpoint is kept with the run and can be promoted to a
+    // library source, so the credential must never appear in it.
+    const shown = new URL(url); shown.searchParams.set("api_key", "REDACTED");
+    const endpoint = shown.toString();
+
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      // This API validates every parameter and names the permitted values in
+      // its own error text. Passing that through beats a bare status code.
+      const detail = ((json && json.errors) || [])
+        .map((e) => e.developer_message || e.user_message).filter(Boolean).join("; ");
+      const e = new Error(`NLR Battery Policies API returned HTTP ${res.status}`
+        + (detail ? ` — ${detail}` : "")
+        + (res.status === 403 ? " (an HTTP 403 usually means the API key was rejected)" : ""));
+      e.userFacing = true;
+      throw e;
+    }
+    const data = Array.isArray(json && json.result) ? json.result : [];
+    const names = (list, k) => (Array.isArray(list) ? list : [])
+      .map((x) => (x && (x[k] || x.name || x.abbreviation)) || x).filter(Boolean).join(", ");
+    const rows = data.map((x) => ({
+      "Title": String(x.title || "").trim(),
+      "Type": x.record_type,
+      "Jurisdiction": x.jurisdiction_type === "State" ? `State — ${names(x.states, "abbreviation") || "?"}` : x.jurisdiction_type,
+      "Status": x.status,
+      "Status date": x.status_date || "",
+      "Topics": names(x.topics, "name"),
+      "Batteries": names(x.batteries, "name"),
+      "Summary": String(x.description || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    }));
+
+    const applied = ["jurisdiction_type", "record_type", "status", "state", "topic", "battery"]
+      .filter((f) => p[f] && String(p[f]).trim())
+      .map((f) => `${f}=${String(p[f]).trim()}`).join(", ");
+    const total = json && json.metadata && json.metadata.resultset && json.metadata.resultset.count;
+    let summary = `${rows.length} record(s) from the NLR Battery Policies and Incentives database`
+      + `${applied ? ` — filtered on ${applied}` : " — no filter"}.`;
+    if (typeof total === "number" && total > rows.length) {
+      summary += ` ${total} match the filter in total; raise the limit to see the rest.`;
+    }
+    if (!rows.length) {
+      summary += " NO DATA RETURNED — every parameter was accepted (this API rejects an invalid"
+        + " value with HTTP 422 naming the permitted ones), so the combination itself has no"
+        + " records. Note that topic and battery take codes, not names: topic REC = Recycling"
+        + " & Disposal, RND = Research & Development, SUP = Supply Chain, DMP = Domestic Mining"
+        + " & Processing, MAN = Manufacturing; battery LIB = Lithium Based, LEA = Lead Acid.";
+    }
+    return {
+      columns: ["Title", "Type", "Jurisdiction", "Status", "Status date", "Topics", "Batteries", "Summary"],
+      rows, summary, endpoint,
+    };
+  },
+
   // USGS Mineral Commodity Summaries — mining, refining and import-reliance
   // ground truth, refreshed every February.
   async m9(p) {
@@ -853,6 +804,8 @@ function runnerReadiness() {
   out.m8 = true;
   out.m9 = true;
   out.m12 = true;
+  out.m13 = !!process.env.NLR_API_KEY;
+  if (!out.m13) reason.m13 = "Add NLR_API_KEY to lodestone/.env (free key at developer.nlr.gov/signup)";
   for (const [id, b] of Object.entries(BINDINGS)) {
     if (b.adapter === "browser") {
       out[id] = browserAvailable();
@@ -920,7 +873,7 @@ const server = http.createServer(async (req, res) => {
     let result;
     try {
       const body = JSON.parse(raw || "{}");
-      result = await handleAssistant(body);
+      result = await handleAgentTurn(body);
     } catch (e) {
       result = e instanceof SyntaxError
         ? { status: 400, json: { error: "Invalid JSON body." } }
@@ -937,7 +890,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     const r = runnerReadiness();
     res.end(JSON.stringify({
-      assistant: true,
+      // Report whether the assistant can actually run, not merely that the
+      // module exists. Claiming availability without credentials is the same
+      // failure mode as a model badge that lies about runnability.
+      assistant: !!process.env.MY_ANTHROPIC_KEY,
       run: runnableModelIds(),
       ready: r.ready,
       reason: r.reason,

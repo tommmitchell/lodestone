@@ -1,4 +1,4 @@
-"""LODESTONE driver for NREL BLAST-Lite (battery degradation / lifetime).
+"""LODESTONE driver for NLR BLAST-Lite (battery degradation / lifetime).
 
 Contract with adapters/python.mjs:
     stdin  <- JSON parameters
@@ -121,7 +121,7 @@ def main():
         "rows": rows,
         "summary": summary,
         "extraction": "exact",
-        "endpoint": f"BLAST-Lite {name} (NREL, local Python)",
+        "endpoint": f"BLAST-Lite {name} (NLR, local Python)",
     }))
 
 

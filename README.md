@@ -1,11 +1,27 @@
-# LODESTONE — local deployment with live assistant
+# LODESTONE — local deployment with agentic assistant
 
-The LODESTONE evidence workbench (P1 prototype) plus the **live LLM assistant** the
-published-artifact version cannot run: grounded Q&A, card proposals, and red-team
-mode (spec FR-A1 / FR-A3 / FR-A5), implemented with **Claude Sonnet 5**
-(`claude-sonnet-5`, default for Q&A) and **Claude Opus 5** (`claude-opus-5`,
-default for red-team). A model picker in the Analyst view overrides the default
-per request.
+The LODESTONE evidence workbench plus the **live LLM assistant** the
+published-artifact version cannot run. The assistant is agentic: it operates the
+workbench through the same action layer the interface uses, so it can read every
+card, source, run and audit, and can run any model you can run.
+
+## Design principle 7 — interface parity
+
+> The assistant can **see** anything the user can see through the interface, and
+> **do** anything the user can do through it.
+
+Capability comes from one **ACTIONS registry** from which both the interface
+handlers and the assistant's tool schemas are generated, so the two cannot drift
+apart — parity is structural, not aspirational. A capability withheld from the
+assistant is a documented exception, not an accident of plumbing.
+
+Parity appears to collide with the human-in-the-loop principle. The
+reconciliation: **parity governs capability; principle 2 governs commitment.**
+The assistant executes real actions through real handlers, but durable mutations
+accumulate into a reviewable, revertible changeset. Reads and model runs are not
+durable mutations and execute directly.
+
+Full design: `LODESTONE-Assistant-Spec.md`.
 
 ## Run it
 
@@ -26,6 +42,7 @@ still works fully; assistant calls return a clear credentials error.
 | `MY_ANTHROPIC_KEY` | yes | — | API key from platform.claude.com → Settings → API keys |
 | `LODESTONE_DAILY_LIMIT_USD` | no | `2` | Hard cap on assistant spend per calendar day (UTC). Calls are refused at the cap. |
 | `COMTRADE_API_KEY` | no | — | UN Comtrade subscription key (free tier). Enables the Comtrade model runner. |
+| `NLR_API_KEY` | no | — | National Laboratory of the Rockies API key (free, developer.nlr.gov/signup). Enables the Battery Policies and Incentives runner. |
 | `PORT` | no | `8787` | Server port |
 
 A real environment variable (e.g. `export MY_ANTHROPIC_KEY=...` in your shell)
@@ -43,21 +60,52 @@ platform.claude.com → Billing → Spend limits.
 
 ## How the assistant works
 
-- The browser sends the current workspace (cards, sources, model runs, decision
-  criteria) plus your question to the local server; **your API key stays on the
-  server** and never reaches the page.
-- The server calls the Claude API with a structured-output JSON schema, so every
-  reply is a machine-readable object: `answer` (with inline citations to card
-  IDs like `[F-1]` and source IDs like `(s5)`), `evidence_gaps`, and 0–4
-  `proposals`.
-- Proposed cards appear with **Accept / Edit / Reject** buttons — nothing enters
-  the evidence board without your action (the spec's human-in-the-loop
-  principle). Accepted cards are marked `origin: assistant-proposed`.
-- Citations in proposals are validated against the workspace; references to
-  nonexistent sources are dropped client-side.
-- The stable system prompt is cached (`cache_control: ephemeral`), so repeated
-  questions reuse the cached prefix; the token meter under each reply shows
-  input/output/cached counts.
+The assistant rail is persistent on the right of **every** view, collapsible.
+Each card carries an **⚡ Ask** button that hands that card over as context, so
+"justify this" needs no ID typed.
+
+- **The browser owns the conversation and the tool loop.** Workspace state lives
+  in browser `localStorage`, so the server cannot see it and tools cannot run
+  there. The server makes exactly one Claude call per round-trip and stays
+  stateless; **your API key never reaches the page**. Model execution is the one
+  tool class that re-enters the server, through the same `/api/run` path the
+  Run-it-here button uses.
+- **The assistant sees live state**, not a snapshot — it reads through tools, so
+  edits you make mid-conversation are visible to it.
+- **An activity log renders each action as it executes** (`→ run_model
+  modelId=m9 · 3 rows`). You watch it work with the visibility you would have
+  watching a colleague drive the interface.
+- **Citations are validated**: `[F-1]` and `(s5)` become live links only if the
+  ID resolves; an invented ID renders as a visible broken reference, so citation
+  hallucination is structurally visible rather than plausible-looking.
+- The stable system prompt and tool schemas are cached
+  (`cache_control: ephemeral`); the meter under each reply shows tokens and
+  cost against the daily cap. A request typically costs one to two cents.
+
+### What it can do today (P1)
+
+Thirteen actions: workspace, cards (list and full detail), justifications with
+inverse trace, sources, models with live runnability, runs, six deterministic
+audits, the actor registry, and **model execution**. Try:
+
+* *"search for conflicts with F-14"*
+* *"run the USGS model with year set to 2026"*
+* *"which criteria have no supporting cards?"*
+
+**It cannot yet write.** Creating cards, links and citations arrives in P2
+behind changesets with in-situ review.
+
+### Actors — every edit is credited
+
+`db.actors` is a first-class registry of humans and LLMs; an LLM actor is a
+*named configuration* (a role plus a model), not a bare model string, which is
+how several coexist. Entities carry `createdBy`/`updatedBy`, and assistant model
+runs record which actor ran them. Pick who you are editing as, and which LLM
+actor the panel drives, in **Settings & data**.
+
+*Attribution, not identity:* the prototype has no authentication, so the human
+actor is declared and taken on trust. The registry is the hook real identity
+would attach to.
 
 ## Notes
 
@@ -73,17 +121,17 @@ platform.claude.com → Billing → Spend limits.
 
 ## Which models LODESTONE can actually run
 
-Of the 12 registered models, only those with a callable, documented interface
+Of the 13 registered models, only those with a callable, documented interface
 can be executed by the app. The **Models & runs** view shows one card per model
 with an honest badge:
 
-**9 of the 12 registered models are runnable in-app.**
+**10 of the 13 registered models are runnable in-app.**
 
 | Badge | Meaning | Models |
 |---|---|---|
 | ▶ **LODESTONE can run this** | One click, no credential | IEA Critical Minerals (m7), IEA Global EV (m8), USGS Mineral Commodity Summaries (m9), USAspending (m10), FAST-41 Permitting Dashboard (m12) |
-| ▶ **Runs, with local setup** | Runnable once a prerequisite is in place | IRA Mineral Price Simulator (m1, needs Chrome), EverBatt (m2, needs your workbook + Excel), BLAST-Lite (m5, needs the venv), UN Comtrade (m11, needs `COMTRADE_API_KEY`) |
-| **Manual capture** | No callable interface. You run it; LODESTONE records parameters, outputs and provenance | BatPaC (m3) and GREET (m6) — both gated behind an email request or registration form; LIBRA (m4) — Stella has no scriptable runtime |
+| ▶ **Runs, with local setup** | Runnable once a prerequisite is in place | IRA Mineral Price Simulator (m1, needs Chrome), EverBatt (m2, needs your workbook + Excel), BLAST-Lite (m5, needs the venv), UN Comtrade (m11, needs `COMTRADE_API_KEY`), Battery Policies & Incentives (m13, needs `NLR_API_KEY`) |
+| **Manual capture** | No callable interface. You run it; LODESTONE records parameters, outputs and provenance | BatPaC (m3) and GREET (m6) — both gated behind an email request or registration form; LIBRA (m4) — a public online interface exists but is not linked from any published page |
 
 Capability is verified empirically rather than assumed, and the app probes
 `/api/capabilities` at start-up so a badge reflects what is actually available
@@ -114,6 +162,10 @@ diagnoses its own empty results:
   codes (`W` withheld, `NA`, `E` estimated, `-` zero) which are passed through
   verbatim with a legend: a withheld figure is **not** a zero and must never be
   summed as one.
+* **Battery Policies (m13)** — the exception that proves the rule. This API
+  validates every parameter and answers an invalid one with `HTTP 422` naming
+  the permitted values, so the runner passes that text straight through rather
+  than reporting a bare status code.
 
 Runs executed in-app are recorded with `runner: "LODESTONE (automatic)"`, the
 exact endpoint, and the elapsed time, then can be promoted to library sources
@@ -125,7 +177,7 @@ is actually available rather than what is theoretically possible.
 
 ## Running web models and spreadsheets (general adapters)
 
-Two generic adapters let LODESTONE drive models it has no bespoke code for.
+Three generic adapters let LODESTONE drive models it has no bespoke code for.
 **Adding a model is a data change, not a code change:** add an entry to
 `model-bindings.mjs` describing where its inputs and outputs are. The run form
 in the UI is generated from that binding, so no client change is needed either.

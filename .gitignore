@@ -1,15 +1,22 @@
 node_modules/
+# Credentials. The bare name is not enough: editors leave backups such as
+# .env.~1~ / .env.bak / .env.save, which are NOT matched by ".env" and would
+# be swept up by "git add -A" into a public repo.
 .env
+.env.*
+!.env.example
 .spend.json
 
 # Evidence content. The tool is public; the analysis is not.
 # Start from public/seed.example.js.
 public/seed.js
 
-# Held back pending a decision: the specification PDF is tool documentation,
-# but it names the specific funding question it was written against.
-# Delete this line to publish it.
+# Held back pending a decision: the specification is tool documentation, but it
+# names the specific funding question it was written against. The .html is the
+# source; the .pdf is rendered from it with headless Chrome.
+# Delete these two lines to publish it.
 LODESTONE-Specification.pdf
+LODESTONE-Specification.html
 
 # Third-party models. Excluded because they are either machine-specific or not
 # ours to redistribute — see models/README.md for how to obtain each.

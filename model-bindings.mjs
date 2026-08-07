@@ -114,7 +114,7 @@ export const BINDINGS = {
   },
 
   /* ------------------------------------------------------------------ *
-   * m5 — BLAST-Lite (NREL, Python, open source). Freely downloadable, so
+   * m5 — BLAST-Lite (NLR, Python, open source). Freely downloadable, so
    * LODESTONE ships the driver and fetches nothing at run time. Answers
    * when batteries actually retire, per chemistry — the feedstock timing
    * that card F-5's recycled-content ceiling rests on.
@@ -127,7 +127,7 @@ export const BINDINGS = {
     cwd: "models",
     timeoutMs: 600000,
     note:
-      "Open-source NREL degradation model, run locally. Physics-based retirement timing by chemistry — exact model output, not an estimate.",
+      "Open-source NLR degradation model, run locally. Physics-based retirement timing by chemistry — exact model output, not an estimate.",
     inputs: {},   // the driver validates its own parameters
     outputs: [],  // output shape is defined by the driver
     params: [

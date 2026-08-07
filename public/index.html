@@ -33,6 +33,56 @@
   .proto-badge { font-size:0.62rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--copper); border:1px solid var(--copper); border-radius:4px; padding:0.1rem 0.45rem; white-space:nowrap; }
 
   .layout { display:grid; grid-template-columns: 12.5rem 1fr; min-height: calc(100vh - 45px); }
+  /* Three-pane workbench: the assistant rail is persistent across all views
+     (spec section 4). It collapses to a launcher button rather than
+     disappearing, so parity with the user is always one click away. */
+  .layout.with-assistant { grid-template-columns: 12.5rem 1fr 23rem; }
+  .arail { border-left:1px solid var(--line); background:var(--card); display:flex;
+           flex-direction:column; min-height:0; position:sticky; top:45px;
+           height:calc(100vh - 45px); }
+  .arail-head { padding:0.55rem 0.7rem; border-bottom:1px solid var(--line);
+                display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; }
+  .arail-body { flex:1; overflow-y:auto; padding:0.7rem; min-height:0; }
+  .arail-foot { border-top:1px solid var(--line); padding:0.55rem 0.7rem; }
+  .arail-foot textarea { width:100%; resize:vertical; min-height:3.1rem; font:inherit;
+                         font-size:0.8rem; padding:0.4rem 0.5rem; }
+  .amsg { border-left:3px solid var(--line); padding:0.4rem 0 0.4rem 0.6rem; margin-bottom:0.6rem; font-size:0.82rem; }
+  .amsg.user { border-left-color:var(--ink-3); }
+  .amsg.bot  { border-left-color:var(--cobalt); }
+  .amsg.err  { border-left-color:var(--danger); background:var(--danger-soft); }
+  .amsg .who { font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-3); }
+  /* Activity log: the user watches the assistant work with the same
+     visibility they would have watching a colleague drive the interface. */
+  .alog { font-family:ui-monospace,Menlo,monospace; font-size:0.68rem; color:var(--ink-2);
+          background:var(--paper); border:1px solid var(--line); border-radius:5px;
+          padding:0.3rem 0.45rem; margin:0.35rem 0; }
+  .alog div { padding:0.06rem 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .alog .ok { color:var(--ink-2); }
+  .alog .bad { color:var(--danger); }
+  .achip { display:inline-block; font-size:0.64rem; padding:0.05rem 0.35rem; border-radius:999px;
+           background:var(--paper); border:1px solid var(--line); color:var(--ink-2); }
+  .achip.llm { border-color:var(--cobalt); color:var(--cobalt); }
+  /* Pending assistant changes render IN PLACE, where the user will judge them
+     — distinct from both the confidence dots and the conflict red. */
+  .card-item.pending { background:#fffaf0; border-color:var(--copper); border-style:dashed; }
+  .card-item.flash { animation: flashcard 1.4s ease-out; }
+  @keyframes flashcard { 0%{box-shadow:0 0 0 3px var(--copper);} 100%{box-shadow:none;} }
+  .pendbadge { display:inline-block; font-size:0.62rem; font-weight:700; letter-spacing:0.04em;
+               text-transform:uppercase; padding:0.05rem 0.35rem; border-radius:3px;
+               background:var(--copper); color:#fff; }
+  .link-pending { border-bottom:1px dashed var(--copper); }
+  .csdrawer { border-top:2px solid var(--copper); background:#fffaf0; max-height:15rem; overflow-y:auto; }
+  .cshead { padding:0.4rem 0.6rem; font-size:0.76rem; display:flex; gap:0.4rem;
+            align-items:baseline; flex-wrap:wrap; border-bottom:1px solid var(--line); }
+  .csop { padding:0.3rem 0.6rem; font-size:0.74rem; cursor:pointer; display:flex; gap:0.4rem;
+          align-items:flex-start; border-bottom:1px solid #f0e7d8; }
+  .csop:hover { background:#fff3dd; }
+  .csbtns { padding:0.45rem 0.6rem; display:flex; gap:0.4rem; flex-wrap:wrap; }
+  .actor-chip { display:inline-block; font-size:0.62rem; padding:0.02rem 0.3rem; border-radius:3px;
+                background:var(--paper); border:1px solid var(--line); color:var(--ink-3); }
+  @media (max-width: 1100px) { .layout.with-assistant { grid-template-columns: 12.5rem 1fr; }
+    .arail { position:fixed; right:0; top:45px; width:min(23rem,92vw); z-index:40;
+             box-shadow:-8px 0 24px rgba(0,0,0,0.13); } }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .rail { display:flex; flex-wrap:wrap; border-right:none !important; border-bottom:1px solid var(--line); padding:0.4rem !important; } .rail .nav-head{display:none;} .rail .nav-item{border-radius:6px; border-right:none !important;} }
   .rail { border-right:1px solid var(--line); padding:0.9rem 0; background:var(--card); }
   .nav-item { display:flex; justify-content:space-between; gap:0.5rem; width:100%; text-align:left; background:none; border:none; color:var(--ink-2); font-size:0.82rem; padding:0.4rem 1.1rem; }
@@ -157,9 +207,10 @@
   <span class="ws-title" id="wsTitle"></span>
   <span class="proto-badge">P1 Prototype</span>
 </div>
-<div class="layout">
+<div class="layout" id="layout">
   <nav class="rail" id="rail" aria-label="Main navigation"></nav>
   <main class="main" id="main"></main>
+  <aside class="arail" id="arail" aria-label="Assistant" hidden></aside>
 </div>
 <dialog id="dlg" aria-modal="true"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -196,7 +247,7 @@ const NEEDS_SOURCE = ["fact","opportunity","tradeoff","risk","recommendation"];
 /* Seed version. Bump whenever evidence is added to the seed below, and add a
    matching entry to SEED_ADDITIONS so workspaces already in localStorage pick
    the new evidence up without being reset (which would discard saved runs). */
-const SEED_VERSION = 5;
+const SEED_VERSION = 9;
 
 /* Evidence added after the original seed, keyed by the version that introduced
    it. Kept as data so seedData() and the migration in load() share one
@@ -235,6 +286,48 @@ const SEED_ADDITIONS = {
              caveat:"Covers FAST-41 covered and transparency projects only (128 projects), not all federal permitting. Mining is the largest sector at 20 projects."}}
     ]
   },
+  8: {
+    // Assistant v2 P1: the actor registry. Added before mutations (P2) need
+    // it, so attribution exists from the first assistant-authored change.
+    actors: [
+      {id:"user1", kind:"human", name:"Analyst"},
+      {id:"LLM3",  kind:"llm",   name:"Workbench assistant", model:"claude-sonnet-5"},
+      {id:"LLM4",  kind:"llm",   name:"Red team",            model:"claude-opus-5"},
+      {id:"seed",  kind:"system", name:"Seeded evidence"},
+    ],
+    settings: { activeActor:"user1", assistantActor:"LLM3", approvalMode:"staged", maxToolRounds:12 }
+  },
+  9: {
+    // P2: the changeset journal. Every assistant-authored change is
+    // attributable to a task, a turn, an actor, and the human who accepted it.
+    journal: []
+  },
+  7: {
+    // New connector added 2026-08-07, found while re-verifying LIBRA: the NLR
+    // developer portal publishes a battery policy/incentive database.
+    models: [
+      {id:"m13", name:"Battery Policies and Incentives", pub:"NLR — Developer Network API",
+       tier:"data connector — runnable in LODESTONE",
+       url:"https://developer.nlr.gov/docs/transportation/battery-policies-v1/",
+       what:"Federal and state battery policies and incentives — the demand-pull and regulatory picture behind recycling economics",
+       obtain:"Free API key from developer.nlr.gov/signup; set NLR_API_KEY in lodestone/.env.",
+       caveat:"Topic and battery filters take short codes, not names (REC = Recycling & Disposal, LIB = Lithium Based). The database covers policy instruments, not their effects — it says a credit exists, never what it achieved."}
+    ]
+  },
+  6: {
+    // LIBRA re-verified 2026-08-07 against the live page. The lab renamed from
+    // NREL to the National Laboratory of the Rockies and nrel.gov was retired
+    // (developer.nrel.gov formally retired 2026-05-29), so the old URL was dead
+    // rather than merely stale.
+    modelPatches: [
+      {id:"m4",
+       set:{url:"https://www.nlr.gov/transportation/libra", pub:"NLR — Stella system dynamics"},
+       ifEquals:{url:"https://www.nrel.gov/transportation/libra", pub:"NLR — Stella"},
+       fill:{
+         obtain:"No download and no API. The publisher's page describes a public online interface with 12 screens for assumptions, inputs, results and scenario comparison, but does not link it and it is not listed on the Data & Tools index. Obtaining that URL means asking the named analysis contacts (Vikram Ravi, Margaret Mann).",
+         caveat:"Reassessed 2026-08-07. Previously judged infeasible on the grounds that Stella has no scriptable runtime — that reasoning was incomplete. If the online interface URL can be obtained, the existing browser adapter is the right tool for it, exactly as for the IRA simulator. Expect chart-only outputs, so runs would be graded artifact and figures read from them capped at probable confidence. The blocker is access, not technology."}}
+    ]
+  },
   5: {
     // m9 became runnable on 2026-08-07 via the annual ScienceBase data release.
     modelPatches: [
@@ -261,8 +354,8 @@ function seedData(){
      version:"v5.1 — the newest version Argonne names, and only in the description of a tutorial video recorded 2023-11-13. The published manual still documents v5.0 (OSTI 1877590). No changelog or release history is given, so a newer build could exist unannounced.",
      obtain:"No public download. Argonne asks that you request a free copy by email — the partnerships page's \"Request BatPaC\" button points at ahmeds@anl.gov. Identity-gated, so it cannot be automated.",
      caveat:"The freely distributed BatPaC assumes stiff pouch cells. BatPaC-Cylindrical is a separate model available only through collaborative research projects, so 4680-class cylindrical formats are out of scope for the free tool."},
-    {id:"m4", name:"LIBRA", pub:"NREL — Stella", tier:"3 (local) — manual capture in prototype", url:"https://www.nrel.gov/transportation/libra", what:"US recycling supply-chain buildout and recycled share of demand"},
-    {id:"m5", name:"BLAST-Lite", pub:"NREL — Python (GitHub)", tier:"3 (local) — manual capture in prototype", url:"https://github.com/NREL/BLAST-Lite", what:"Battery degradation/lifetime — grounds EOL timing assumptions"},
+    {id:"m4", name:"LIBRA", pub:"NLR — Stella", tier:"3 (local) — manual capture in prototype", url:"https://www.nlr.gov/transportation/libra", what:"US recycling supply-chain buildout and recycled share of demand"},
+    {id:"m5", name:"BLAST-Lite", pub:"NLR — Python (GitHub)", tier:"3 (local) — manual capture in prototype", url:"https://github.com/NatLabRockies/BLAST-Lite", what:"Battery degradation/lifetime — grounds EOL timing assumptions"},
     {id:"m6", name:"GREET (R&D GREET)", pub:"Argonne", tier:"3 (local) — manual capture in prototype", url:"https://greet.anl.gov/", what:"Lifecycle energy and emissions incl. recycling pathways"},
     {id:"m7", name:"IEA Critical Minerals Data Explorer", pub:"IEA", tier:"1 (embed/link) + data", url:"https://www.iea.org/data-and-statistics/data-tools/critical-minerals-data-explorer", what:"Demand/supply projections by mineral and scenario"},
     {id:"m8", name:"IEA Global EV Data Explorer", pub:"IEA", tier:"1 (embed/link) + data", url:"https://www.iea.org/data-and-statistics/data-tools/global-ev-data-explorer", what:"EV sales/stock/battery demand — the demand denominator"},
@@ -289,39 +382,77 @@ function seedData(){
 /* Adds any seed evidence introduced after the workspace's recorded version.
    Entities already present by id are left alone, so local edits survive; only
    genuinely new ones are appended. Returns the number of entities added. */
+/* One table describing how each kind of seed addition merges. Both the
+   collection step and the application step are driven from it, so adding a new
+   kind of seeded entity means adding ONE line here — not remembering to touch
+   two places. That omission is exactly what broke three times (models, then
+   actors/settings, then journal): the merged object was assembled from a
+   hand-written list, so a new key silently arrived as undefined and the
+   migration ran clean while doing nothing. */
+const SEED_MERGE = {
+  sources:      { how: "byId",        into: "sources" },
+  cards:        { how: "byId",        into: "cards"   },
+  models:       { how: "byId",        into: "models"  },
+  actors:       { how: "byId",        into: "actors"  },
+  settings:     { how: "fillFields",  into: "settings" },
+  journal:      { how: "ensureArray", into: "journal"  },
+  modelPatches: { how: "patch",       into: "models"   },
+};
+
 function applySeedAdditions(target){
   let added = 0;
   const from = Number(target.seedVersion || 1) + 1;
+  const clone = x => JSON.parse(JSON.stringify(x));
+
   for (let v = from; v <= SEED_VERSION; v++){
     // Tool-level additions (model metadata) ship in this file; evidence-level
     // additions come from the gitignored seed, if one is present.
     const pub = SEED_ADDITIONS[v] || {};
     const priv = ((typeof window !== "undefined" && window.LODESTONE_SEED && window.LODESTONE_SEED.additions) || {})[v] || {};
-    const add = {
-      sources: [...(pub.sources || []), ...(priv.sources || [])],
-      cards: [...(pub.cards || []), ...(priv.cards || [])],
-      modelPatches: [...(pub.modelPatches || []), ...(priv.modelPatches || [])],
-    };
-    for (const s of (add.sources || [])) {
-      if (!target.sources.some(x => x.id === s.id)) { target.sources.push(JSON.parse(JSON.stringify(s))); added++; }
+
+    // A key present in a seed entry but absent from SEED_MERGE would be
+    // silently dropped — the precise bug this table exists to prevent. Say so.
+    for (const key of new Set([...Object.keys(pub), ...Object.keys(priv)])) {
+      if (!SEED_MERGE[key]) console.warn(`SEED_ADDITIONS[${v}] has unknown key "${key}" — add it to SEED_MERGE or it will be ignored.`);
     }
-    for (const c of (add.cards || [])) {
-      if (!target.cards.some(x => x.id === c.id)) { target.cards.push(JSON.parse(JSON.stringify(c))); added++; }
-    }
-    // Two patch modes, both refusing to clobber a local edit:
-    //   fill — only sets a field the workspace does not have at all
-    //   set  — replaces a field, but only when it still holds the value named
-    //          in ifEquals, so an analyst's own wording always wins
-    for (const patch of (add.modelPatches || [])) {
-      const m = (target.models || []).find(x => x.id === patch.id);
-      if (!m) continue;
-      for (const [k, v] of Object.entries(patch.fill || {})) {
-        if (m[k] === undefined) { m[k] = v; added++; }
+
+    for (const [key, rule] of Object.entries(SEED_MERGE)) {
+      const a = pub[key], b = priv[key];
+      if (a === undefined && b === undefined) continue;
+
+      if (rule.how === "byId") {
+        if (!target[rule.into]) target[rule.into] = [];
+        for (const item of [...(a || []), ...(b || [])]) {
+          if (!target[rule.into].some(x => x.id === item.id)) { target[rule.into].push(clone(item)); added++; }
+        }
       }
-      for (const [k, v] of Object.entries(patch.set || {})) {
-        const expected = (patch.ifEquals || {})[k];
-        if (m[k] === v) continue;
-        if (expected === undefined || m[k] === expected) { m[k] = v; added++; }
+      else if (rule.how === "fillFields") {
+        // Fill only where absent, so a user's own choice is never reset.
+        if (!target[rule.into]) target[rule.into] = {};
+        for (const [k, val] of Object.entries({ ...(a || {}), ...(b || {}) })) {
+          if (target[rule.into][k] === undefined) { target[rule.into][k] = val; added++; }
+        }
+      }
+      else if (rule.how === "ensureArray") {
+        if (!target[rule.into]) { target[rule.into] = []; added++; }
+      }
+      else if (rule.how === "patch") {
+        // Two patch modes, both refusing to clobber a local edit:
+        //   fill — only sets a field the workspace does not have at all
+        //   set  — replaces a field, but only when it still holds the value
+        //          named in ifEquals, so an analyst's own wording always wins
+        for (const patch of [...(a || []), ...(b || [])]) {
+          const m = (target[rule.into] || []).find(x => x.id === patch.id);
+          if (!m) continue;
+          for (const [k, val] of Object.entries(patch.fill || {})) {
+            if (m[k] === undefined) { m[k] = val; added++; }
+          }
+          for (const [k, val] of Object.entries(patch.set || {})) {
+            const expected = (patch.ifEquals || {})[k];
+            if (m[k] === val) continue;
+            if (expected === undefined || m[k] === expected) { m[k] = val; added++; }
+          }
+        }
       }
     }
   }
@@ -356,6 +487,46 @@ function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,
 function today(){ return new Date().toISOString().slice(0,10); }
 function card(id){ return db.cards.find(c=>c.id===id); }
 function source(id){ return db.sources.find(s=>s.id===id); }
+
+/* ---------------- Actors (spec section 7) ----------------
+   Every edit is credited to whoever made it, human or LLM, through one
+   registry that is the canonical source of names for provenance. An LLM
+   actor is a named configuration (a role plus a model), not a bare model
+   string, which is how two LLM actors with different models coexist.
+   Honest caveat: with no authentication the active human actor is declared,
+   not verified — this is attribution, not identity. */
+function actors(){ return db.actors || []; }
+function actor(id){ return actors().find(a=>a.id===id); }
+function activeActor(){ return actor(db.settings && db.settings.activeActor) || actors().find(a=>a.kind==="human") || null; }
+function assistantActor(){ return actor(db.settings && db.settings.assistantActor) || actors().find(a=>a.kind==="llm") || null; }
+function actorId(){ const a = activeActor(); return a ? a.id : "unknown"; }
+// One renderer per referenceable entity — actors included, so a rename
+// propagates everywhere and a dangling reference stays visible.
+function actorRef(id){
+  if(!id) return "";
+  const a = actor(id);
+  if(!a) return `<span class="ref ref-broken" data-tipmissing="${esc(id)}" tabindex="0">${esc(id)} ⚠</span>`;
+  return `<span class="actor-chip" title="${esc(a.kind==="llm" ? (a.name+" · "+(a.model||"")) : a.name)}">${esc(a.name)}</span>`;
+}
+// Stamp attribution on a mutation. Cheap here because every edit already
+// funnels through a small number of save paths; universal journaling of
+// human edits follows in P3.
+function stampCreate(o){ o.createdBy = actorId(); o.updatedBy = actorId(); return o; }
+function stampUpdate(o){ o.updatedBy = actorId(); return o; }
+
+/* P3 — universal journaling. The assistant's changes were already journaled;
+   this closes the other half, so "every edit is credited to whoever makes it"
+   holds for people too. Human edits are recorded as already-applied (they were
+   never staged), which is what distinguishes them in the journal. */
+function journalHuman(describe, targets){
+  if(!db.journal) db.journal = [];
+  db.journal.unshift({
+    id: uid("cs"), task: describe, actor: actorId(), created: today(),
+    status: "applied", approvedBy: actorId(), human: true,
+    ops: [{ action: "ui", params: {}, targets: targets || {}, describe, status: "applied" }]
+  });
+  db.journal = db.journal.slice(0, 50);
+}
 
 /* ---------------- Derived ---------------- */
 function effConfidence(c){
@@ -432,6 +603,15 @@ const MODEL_RUN = {
     {name:"country", label:"Country (optional) — e.g. United States, China, Australia. Blank returns all.", value:""},
     {name:"year", label:"Year (optional) — 2021 to 2025. Blank returns all years.", value:""},
     {name:"limit", label:"Maximum rows (1–500)", value:"60"},
+  ]},
+  m13: { mode:"key", keyName:"NLR_API_KEY", note:"Free key from developer.nlr.gov/signup; add it to lodestone/.env. Every parameter is validated by the API, which names the permitted values when one is wrong.", params:[
+    {name:"topic", label:"Topic CODE (optional) — REC Recycling & Disposal · RND Research & Development · SUP Supply Chain · DMP Domestic Mining & Processing · MAN Manufacturing · MIN Mineral Extraction · EVS Electric Vehicles · STA Stationary Storage · ENV Environmental Impacts · DCL Domestic Content & Labeling · SAF Safety & Transport · DEF Defense · USM USMCA · AVI Aviation · ULT Ultracapacitors · OTH Other Potential Funding", value:"REC"},
+    {name:"battery", label:"Battery CODE (optional) — LIB Lithium Based · LEA Lead Acid · NMH Nickel-Metal Hydride · SOL Solid State · OTH Other", value:""},
+    {name:"jurisdiction_type", label:"Jurisdiction (optional) — Federal or State", value:"Federal"},
+    {name:"record_type", label:"Record type (optional) — Policy or Incentive", value:""},
+    {name:"status", label:"Status (optional) — enacted · amended · expired · archived · repealed", value:""},
+    {name:"state", label:"State postal code (optional) — e.g. CA, MI, NV. Only meaningful for State jurisdiction.", value:""},
+    {name:"limit", label:"Maximum rows (1–200)", value:"25"},
   ]},
   m12: { mode:"live", note:"Socrata open-data API — no app token needed.", params:[
     {name:"dataset", label:"Dataset — vcxp-6qfw (covered projects, one row each) or mjka-7nez (adds permitting milestones, many rows per project)", value:"vcxp-6qfw"},
@@ -861,6 +1041,9 @@ function render(){
   else if(view==="analyst") main.innerHTML = viewAnalyst();
   else if(view==="brief") main.innerHTML = viewBrief();
   else if(view==="settings") main.innerHTML = viewSettings();
+  // The assistant rail is defined in assistant.js, which is only served by the
+  // local deployment. Absent (published artifact), the layout stays two-pane.
+  if(typeof renderAssistant === "function") renderAssistant();
 }
 function renderRail(){
   const counts = {};
@@ -872,7 +1055,7 @@ function renderRail(){
     item("board","Evidence board",total) +
     item("library","Reading library",db.sources.length) +
     item("models","Models & runs",db.runs.length) +
-    item("analyst","Analyst tools","") +
+    item("analyst","Audits & health","") +
     item("brief","Brief & export","") +
     `<div class="nav-head">Card types</div>` +
     Object.keys(TYPES).map(t=>`<button class="nav-item" data-action="navtype" data-type="${t}"><span>${TYPES[t].plural}</span><span class="nav-count">${counts[t]}</span></button>`).join("") +
@@ -890,11 +1073,14 @@ function cardHTML(c, opts){
   const cites = c.citations.map(x=>sourceRef(x.sourceId, {locator:x.locator}));
   const links = c.links.map(l=>`${esc(l.rel)} ${cardRef(l.to)}`);
   const unsourced = NEEDS_SOURCE.includes(c.type) && c.citations.length===0;
-  return `<article class="card-item" data-cid="${esc(c.id)}">
+  // In-situ review: a card the assistant just created or changed renders
+  // marked, in place, so it is judged where it will live.
+  const pend = (typeof isPending==="function") && isPending("card", c.id);
+  return `<article class="card-item${pend?" pending":""}" data-cid="${esc(c.id)}">
     <div class="card-top">
       <span class="ctype ${esc(c.type)}">${TYPES[c.type].label}</span>
       <span class="ccode">${esc(c.id)}</span>
-      <span class="conf-note">Confidence: <b>${esc(conf)}</b>${c.status!=="active"?` · status: <b>${esc(c.status)}</b>`:""} · <button class="linklike conf-note" data-action="trace" data-id="${esc(c.id)}" title="Show the sources and the reasoning behind this card">${c.citations.length} source${c.citations.length===1?"":"s"}</button></span>
+      ${pend?`<span class="pendbadge">pending</span> `:""}<span class="conf-note">Confidence: <b>${esc(conf)}</b>${c.status!=="active"?` · status: <b>${esc(c.status)}</b>`:""} · <button class="linklike conf-note" data-action="trace" data-id="${esc(c.id)}" title="Show the sources and the reasoning behind this card">${c.citations.length} source${c.citations.length===1?"":"s"}</button></span>
       ${hasConflict(c)?`<span class="badge conflict">⚠ conflict open</span>`:""}
       ${unsourced?`<span class="badge unsourced">needs sourcing</span>`:""}
     </div>
@@ -905,6 +1091,7 @@ function cardHTML(c, opts){
       ${links.length?`<span>links: ${links.join(", ")}</span>`:""}
       ${c.tags.length?`<span>${c.tags.map(t=>`<span class="tagpill">${esc(t)}</span>`).join(" ")}</span>`:""}
       ${opts.noEdit?"":`<button class="btn small just" data-action="trace" data-id="${esc(c.id)}">Justification</button>
+      ${typeof renderAssistant==="function"?`<button class="btn small" data-action="aJustify" data-id="${esc(c.id)}" title="Have the assistant build this card's justification: find support, record conflicts, cite sources">⚡ Justify</button>`:""}
       <button class="btn small" data-action="editCard" data-id="${esc(c.id)}">Edit</button>`}
     </div>
   </article>`;
@@ -923,7 +1110,8 @@ function viewBoard(){
   <div class="view-head">
     <span class="view-title">Evidence board</span>
     <input class="searchbox" type="text" id="boardQ" value="${esc(filters.q)}" placeholder="Filter cards…" aria-label="Filter cards">
-    <button class="btn primary" data-action="newCard">+ New card</button>
+    ${typeof renderAssistant==="function"?`<button class="btn" data-action="aConclude" title="Have the assistant form a recommendation for the decision question and justify it">⚡ Form a conclusion</button>`:""}
+      <button class="btn primary" data-action="newCard">+ New card</button>
   </div>
   <div class="chips" style="margin-bottom:0.5rem;">
     <button class="chip ${filters.type==="all"?"on":""}" data-action="ftype" data-type="all">All</button>
@@ -1026,6 +1214,51 @@ function viewModels(){
   ${cards}`;
 }
 
+
+/* P3 — parity + provenance panels. Both are deterministic. */
+function parityPanelHTML(){
+  if(typeof parityAudit !== "function")
+    return `<div class="panel"><h3>Interface parity</h3><p class="hint">Requires the local deployment (the assistant module defines the action registry).</p></div>`;
+  const r = parityAudit();
+  const gapRows = r.gaps.map(g=>`<li><code>${esc(g.action)}</code> — ${esc(g.why)}</li>`).join("");
+  return `<div class="panel">
+    <h3>Interface parity ${r.pass?`<span class="badge runs">passing</span>`:`<span class="badge needs">${r.gaps.length} gap${r.gaps.length===1?"":"s"}</span>`}</h3>
+    <p class="hint">Design principle 7: the assistant can do anything the user can do through the interface. A capability withheld must be a <i>documented exception</i>, not an accident. Checks all ${r.total} interface actions against the assistant's action registry.${r.complete?"":` <b>Partial scan</b> — reading the app source failed, so only actions currently rendered were checked.`}</p>
+    ${r.gaps.length?`<div class="notice" style="border-left-color:var(--danger);background:var(--danger-soft);"><b>Unclassified or unreachable:</b><ul style="margin:0.3rem 0 0 1rem;">${gapRows}</ul></div>`:""}
+    <div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:0.6rem;margin-top:0.5rem;">
+      <div><b style="font-size:0.8rem;">${r.covered.length} with an assistant equivalent</b>
+        <div class="conf-note" style="margin-top:0.2rem;line-height:1.5;">${r.covered.map(c=>esc(c.action)).join(" · ")}</div></div>
+      <div><b style="font-size:0.8rem;">${r.uiOnly.length} interface-only</b>
+        <div class="conf-note" style="margin-top:0.2rem;line-height:1.5;">Navigation, filtering and dialogs — no workspace state to change.<br>${r.uiOnly.map(esc).join(" · ")}</div></div>
+      <div><b style="font-size:0.8rem;">${r.exceptions.length} documented exceptions</b>
+        <div class="conf-note" style="margin-top:0.2rem;line-height:1.5;">${r.exceptions.map(e=>`${esc(e.action)} <i>(${esc(e.reason)})</i>`).join(" · ")}</div></div>
+      <div><b style="font-size:0.8rem;">${r.assistantOnly.length} assistant-only reads</b>
+        <div class="conf-note" style="margin-top:0.2rem;line-height:1.5;">Structured reads with no single button behind them.<br>${r.assistantOnly.map(esc).join(" · ")}</div></div>
+    </div>
+  </div>`;
+}
+
+function journalPanelHTML(){
+  const j = db.journal || [];
+  if(!j.length) return `<div class="panel"><h3>Change journal</h3><p class="hint">No recorded changes yet. Every edit — yours or the assistant's — is credited to an actor and listed here.</p></div>`;
+  const rows = j.slice(0,25).map(cs=>{
+    const kept = (cs.ops||[]).filter(o=>o.status==="accepted"||o.status==="applied").length;
+    const dropped = (cs.ops||[]).filter(o=>o.status==="rejected").length;
+    return `<tr>
+      <td>${esc(cs.created)}</td>
+      <td>${actorRef(cs.actor)}${cs.human?` <span class="conf-note">direct</span>`:` <span class="conf-note">reviewed by ${cs.approvedBy?esc(actor(cs.approvedBy)?actor(cs.approvedBy).name:cs.approvedBy):"—"}</span>`}</td>
+      <td>${esc(cs.task)}</td>
+      <td>${kept} kept${dropped?` · ${dropped} rejected`:""}</td>
+      <td><span class="conf-note">${esc(cs.status)}</span></td>
+    </tr>`;
+  }).join("");
+  return `<div class="panel">
+    <h3>Change journal <span class="conf-note">${j.length} entr${j.length===1?"y":"ies"}, newest first</span></h3>
+    <p class="hint">Every edit is credited to whoever made it — human or LLM. Assistant changesets record which human accepted them; direct edits are marked <i>direct</i>. Retained for the last 50 changes and included in the workspace export.</p>
+    <div class="gridwrap"><table class="grid"><thead><tr><th>Date</th><th>Actor</th><th>What</th><th>Ops</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
 function viewAnalyst(){
   const ns = needsSourcing(), ss = singleSource(), oc = openConflicts(), st = staleSources();
   const oqs = db.cards.filter(c=>c.type==="open_question" && c.status!=="deprecated" && c.status!=="answered");
@@ -1036,8 +1269,10 @@ function viewAnalyst(){
   });
   const maxCov = Math.max(1, ...cov.map(x=>x.n));
   return `
-  <div class="view-head"><span class="view-title">Analyst tools</span></div>
-  <div class="notice"><b>Where the LLM assistant lives:</b> the live assistant — grounded Q&amp;A, card proposals, and red-team mode (FR-A1–A5) on Claude Opus 5 and Sonnet 5 — is implemented in the <b>local deployment</b> (the <code>lodestone/</code> app: <code>npm start</code>, then open the Analyst view), where an API key can be held server-side. This published page cannot reach external services, so a live assistant can't run here; everything below is computed deterministically from your workspace data (FR-A4). Workspaces move between the two via Settings → Export/Import JSON.</div>
+  <div class="view-head"><span class="view-title">Audits &amp; health</span></div>
+  <p class="view-sub">Deterministic checks, computed in code rather than judged by a model, so their
+  answers are exact (FR-A4). The assistant is in the rail on the right and can run every audit
+  here itself.</p>
 
   <div class="panel">
     <h3>Grounded search</h3>
@@ -1093,7 +1328,9 @@ function viewAnalyst(){
     <h4 style="font-size:0.72rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); margin:0.8rem 0 0.3rem;">Orphan cards — no links in or out (${gh.orphans.length})</h4>
     ${gh.orphans.length? gh.orphans.map(c=>`<div class="hit"><span class="where">${cardRef(c.id)}</span> ${esc(c.statement)} <button class="btn small" data-action="trace" data-id="${esc(c.id)}">Link it</button></div>`).join("")
       : `<div class="empty">No orphans — every card is connected to the argument.</div>`}
-  </div>`;
+  </div>
+  ${parityPanelHTML()}
+  ${journalPanelHTML()}`;
 }
 
 function viewBrief(){
@@ -1136,6 +1373,23 @@ function viewSettings(){
     <div class="frow"><label for="setQ">Decision question</label><input type="text" id="setQ" value="${esc(db.ws.question)}"></div>
     <div class="frow"><label for="setCrit">Decision criteria (one per line — card links to criteria are positional, so edit rather than reorder)</label><textarea id="setCrit">${esc(db.ws.criteria.join("\n"))}</textarea></div>
     <button class="btn primary" data-action="saveWs">Save workspace settings</button>
+  </div>
+  <div class="panel">
+    <h3>Assistant &amp; actors</h3>
+    <p class="hint">Every edit is credited to an actor — human or LLM. An LLM actor is a named configuration (a role plus a model), so several can coexist. With no authentication in this prototype the human actor is <b>declared, not verified</b>: this is attribution, not identity.</p>
+    <div class="frow"><label for="setActor">You are editing as</label>
+      <select id="setActor">${actors().filter(a=>a.kind==="human").map(a=>`<option value="${esc(a.id)}" ${db.settings.activeActor===a.id?"selected":""}>${esc(a.name)} (${esc(a.id)})</option>`).join("")}</select></div>
+    <div class="frow"><label for="setAsstActor">Assistant actor</label>
+      <select id="setAsstActor">${actors().filter(a=>a.kind==="llm").map(a=>`<option value="${esc(a.id)}" ${db.settings.assistantActor===a.id?"selected":""}>${esc(a.name)} (${esc(a.id)}) — ${esc(a.model||"")}</option>`).join("")}</select></div>
+    <div class="frow"><label for="setRounds">Max tool rounds per chat request (1–16). Named tasks such as Justify may use up to 14.</label>
+      <input type="number" id="setRounds" min="1" max="16" value="${esc(db.settings.maxToolRounds)}"></div>
+    <div class="frow"><label for="setApproval">Approval mode (applies to assistant edits — P2)</label>
+      <select id="setApproval">
+        <option value="staged" ${db.settings.approvalMode==="staged"?"selected":""}>Staged — review before anything is committed</option>
+        <option value="apply" ${db.settings.approvalMode==="apply"?"selected":""}>Apply immediately — revertible from the journal</option>
+      </select></div>
+    <button class="btn primary" data-action="saveAsst">Save assistant settings</button>
+    <p class="hint" style="margin-top:0.6rem;">Registered actors: ${actors().map(a=>`${actorRef(a.id)}<span class="conf-note"> ${esc(a.kind)}${a.model?` · ${esc(a.model)}`:""}</span>`).join(" · ")}</p>
   </div>
   <div class="panel">
     <h3>Data</h3>
@@ -1508,15 +1762,19 @@ document.addEventListener("click", ev=>{
     if(!draft.id){
       draft.id = uid(TYPES[draft.type].prefix);
       draft.created = today(); draft.updated = today();
+      stampCreate(draft);
       db.cards.push(draft);
+      journalHuman(`Create ${draft.id} (${TYPES[draft.type].label})`, {card:draft.id});
     } else {
       const i = db.cards.findIndex(c=>c.id===draft.id);
       draft.updated = today();
+      stampUpdate(draft);
       db.cards[i] = draft;
+      journalHuman(`Edit ${draft.id}`, {card:draft.id});
     }
     save(); closeDlg(); render(); toast("Card saved");
   }
-  else if(a==="deprecateCard"){ collectCardForm(); draft.status="deprecated"; const i=db.cards.findIndex(c=>c.id===draft.id); db.cards[i]=draft; save(); closeDlg(); render(); toast("Card deprecated (kept for the record; excluded from views and briefs)"); }
+  else if(a==="deprecateCard"){ collectCardForm(); draft.status="deprecated"; stampUpdate(draft); const i=db.cards.findIndex(c=>c.id===draft.id); db.cards[i]=draft; journalHuman(`Deprecate ${draft.id}`, {card:draft.id}); save(); closeDlg(); render(); toast("Card deprecated (kept for the record; excluded from views and briefs)"); }
   else if(a==="newSource"){ sourceForm(null); }
   else if(a==="editSource"){ sourceForm(source(el.dataset.id)); }
   else if(a==="saveSource"){
@@ -1572,6 +1830,14 @@ document.addEventListener("click", ev=>{
     db.ws.question = document.getElementById("setQ").value.trim();
     db.ws.criteria = document.getElementById("setCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
     save(); render(); toast("Workspace settings saved");
+  }
+  else if(a==="saveAsst"){
+    const rounds = Math.max(1, Math.min(16, Number(document.getElementById("setRounds").value) || 8));
+    db.settings.activeActor = document.getElementById("setActor").value;
+    db.settings.assistantActor = document.getElementById("setAsstActor").value;
+    db.settings.approvalMode = document.getElementById("setApproval").value;
+    db.settings.maxToolRounds = rounds;
+    save(); render(); toast("Assistant settings saved");
   }
   else if(a==="resetSeed"){
     if(confirm("Replace the current workspace with the seeded demo data? Unexported changes will be lost.")){

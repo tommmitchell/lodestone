@@ -11,7 +11,7 @@ references to match your copy.
 | EverBatt | https://www.anl.gov/amd/everbatt | Register & Download form |
 | BatPaC (v5.1; manual documents v5.0) | https://www.anl.gov/cse/electrochemical-chemical-TEA | No public download — email request to `ahmeds@anl.gov`. The free version assumes stiff pouch cells; BatPaC-Cylindrical is collaboration-only |
 | R&D GREET | https://greet.anl.gov/ | Email-registration form before download. Ships as Excel, so the existing `xlsx` adapter applies |
-| LIBRA | NREL | Stella Architect runtime required; no scriptable headless interface |
+| LIBRA | NLR | Stella Architect runtime required; no scriptable headless interface |
 
 ## Use a macro-free .xlsx copy
 
@@ -39,16 +39,16 @@ running it from LODESTONE, or unsaved edits will be discarded.
 
 ## BLAST-Lite (open source — no registration)
 
-NREL's battery degradation model. It is **not** committed to this repository —
-it is NREL's own BSD-3-licensed project with its own LICENSE and NOTICE, so
+NLR's battery degradation model. It is **not** committed to this repository —
+it is NLR's own BSD-3-licensed project with its own LICENSE and NOTICE, so
 vendoring it here would republish their code under ours. Clone it yourself:
 
     cd lodestone/models
-    git clone --depth 1 https://github.com/NREL/BLAST-Lite.git
+    git clone --depth 1 https://github.com/NatLabRockies/BLAST-Lite.git
 
 It is then driven by `blast_driver.py` through the generic `python` adapter.
 
-Its `__init__` chain imports `h5pyd`/`geopy` (NREL cloud climate data) even when
+Its `__init__` chain imports `h5pyd`/`geopy` (NLR cloud climate data) even when
 unused, so it runs from an isolated venv rather than your main Python env:
 
     cd lodestone/models

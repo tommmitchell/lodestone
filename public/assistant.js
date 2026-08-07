@@ -105,6 +105,8 @@ function applyInverse(op) {
   if (inv.kind === "restoreSource") { const i = db.sources.findIndex(s => s.id === inv.source.id); if (i >= 0) db.sources[i] = JSON.parse(JSON.stringify(inv.source)); return true; }
   if (inv.kind === "removeLink") { const c = card(inv.from); if (c) c.links = c.links.filter(l => !(l.to === inv.to && l.rel === inv.rel)); return true; }
   if (inv.kind === "restoreLink") { const c = card(inv.from); if (c && !c.links.some(l => l.to === inv.link.to && l.rel === inv.link.rel)) c.links.push({ ...inv.link }); return true; }
+  if (inv.kind === "removeModel") { db.models = db.models.filter(m => m.id !== inv.id); return true; }
+  if (inv.kind === "restoreModel") { if (!db.models.some(m => m.id === inv.model.id)) db.models.push(JSON.parse(JSON.stringify(inv.model))); return true; }
   if (inv.kind === "removeList") { const i = db.lists.findIndex(l => l.id === inv.id); if (i >= 0) db.lists.splice(i, 1); return true; }
   if (inv.kind === "removeFromList") { const l = db.lists.find(x => x.id === inv.listId); if (l) l.items = l.items.filter(i => i.sourceId !== inv.sourceId); return true; }
   if (inv.kind === "restoreToList") { const l = db.lists.find(x => x.id === inv.listId); if (l) l.items.splice(inv.index, 0, inv.item); return true; }
@@ -169,6 +171,7 @@ const PARITY_MAP = {
   newList: "create_list", listAdd: "add_to_list", listRemove: "remove_from_list",
   listMove: "reorder_list",
   promoteRun: "promote_run", runNow: "run_model", doRun: "run_model",
+  addModel: "add_model", removeModel: "remove_model",
   runSearch: "list_cards/list_sources", trace: "get_justification",
   sourceDetail: "get_source", navaudit: "run_audit", viewRun: "get_run",
   gotoRun: "get_run", recordRun: "run_model",
@@ -684,6 +687,49 @@ const ACTIONS = {
       recordOp("reorder_list", p, { list: l.id }, { kind: "reorderList", listId: l.id, from: j, to: i },
                `Move ${p.sourceId} ${p.direction} in “${l.title}”`);
       return { moved: p.sourceId, position: j };
+    },
+  },
+
+  add_model: {
+    kind: "mutate",
+    desc: "Add a model from the catalog to this workspace, so it can be run here. Models belong to a workspace: an inquiry uses the ones its question needs. Call list_catalog_models to see what is available.",
+    schema: { type: "object", properties: { modelId: { type: "string" } }, required: ["modelId"], additionalProperties: false },
+    run: (p) => {
+      const m = (typeof catalogEntry === "function") && catalogEntry(p.modelId);
+      if (!m) return { error: `No model ${p.modelId} in the catalog. Call list_catalog_models for valid ids.` };
+      if (db.models.some(x => x.id === p.modelId)) return { error: `${p.modelId} is already in this workspace.` };
+      db.models.push(JSON.parse(JSON.stringify(m)));
+      recordOp("add_model", p, { model: m.id }, { kind: "removeModel", id: m.id },
+               `Add model ${m.id} (${m.name}) to this workspace`);
+      return { added: m.id, name: m.name, runnable_now: modelRunnableNow(m.id) };
+    },
+  },
+
+  remove_model: {
+    kind: "mutate",
+    desc: "Remove a model from this workspace. It stays in the catalog and can be added back. Refused if recorded runs reference it.",
+    schema: { type: "object", properties: { modelId: { type: "string" } }, required: ["modelId"], additionalProperties: false },
+    run: (p) => {
+      const m = db.models.find(x => x.id === p.modelId);
+      if (!m) return { error: `${p.modelId} is not in this workspace.` };
+      const n = db.runs.filter(r => r.modelId === p.modelId).length;
+      if (n) return { error: `${n} recorded run(s) reference ${p.modelId}; removing it would orphan them.` };
+      db.models = db.models.filter(x => x.id !== p.modelId);
+      recordOp("remove_model", p, { model: p.modelId }, { kind: "restoreModel", model: m },
+               `Remove model ${p.modelId} (${m.name}) from this workspace`);
+      return { removed: p.modelId };
+    },
+  },
+
+  list_catalog_models: {
+    kind: "read",
+    desc: "Models LODESTONE knows about that are NOT yet in this workspace, and could be added with add_model.",
+    schema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => {
+      if (typeof modelCatalog !== "function") return { items: [] };
+      const here = new Set(db.models.map(m => m.id));
+      return { items: modelCatalog().filter(m => !here.has(m.id))
+        .map(m => ({ id: m.id, name: m.name, publisher: m.pub, what: m.what })) };
     },
   },
 

@@ -541,9 +541,25 @@ function save(){ saveWorkspace(); touchIndex(); }
 
 /* A new workspace starts empty of evidence but fully equipped: the model
    registry is present, and your actors and preferences carry over. */
+/* The registry of models a workspace uses is part of the inquiry, not part of
+   the tool: a grid-storage question has no use for EverBatt. The catalog is
+   the set LODESTONE knows how to describe; a workspace holds the subset it
+   has chosen. Derived from a seeded workspace so every model-metadata
+   migration is already applied to the catalog entries. */
+let _modelCatalog = null;
+function modelCatalog(){
+  if(!_modelCatalog){
+    try { _modelCatalog = seedData().models || []; } catch(e){ _modelCatalog = []; }
+  }
+  return _modelCatalog;
+}
+function catalogEntry(id){ return modelCatalog().find(m=>m.id===id); }
+
 function blankWorkspace(title, question, criteria){
-  const d = seedData();                       // models + all migrations applied
-  d.cards = []; d.sources = []; d.lists = []; d.runs = []; d.journal = [];
+  const d = seedData();
+  // A new workspace starts with nothing of its own: no evidence, no library,
+  // and no models. Add the models the question actually needs.
+  d.cards = []; d.sources = []; d.lists = []; d.runs = []; d.journal = []; d.models = [];
   d.pendingChangeset = null; d.seq = 100;
   d.ws = { title: title || "Untitled workspace", question: question || "", criteria: criteria || [] };
   if(db && db.actors)   d.actors   = JSON.parse(JSON.stringify(db.actors));
@@ -1304,13 +1320,28 @@ function viewModels(){
         ${modelRunnableNow(m.id)?`<button class="btn small just" data-action="runNow" data-id="${esc(m.id)}">▶ Run it here</button>`:""}
         ${!modelRunnableNow(m.id) && (r.mode!=="manual" || (serverCaps&&(serverCaps.run||[]).includes(m.id)))?`<span class="conf-note">${serverCaps?esc(modelReason(m.id)||"Not ready"):"Start the local server (npm start) to enable"}</span>`:""}
         <button class="btn small" data-action="recordRun" data-id="${esc(m.id)}">Record a run manually</button>
+        <button class="btn small" data-action="removeModel" data-id="${esc(m.id)}" title="Remove this model from this workspace (it stays in the catalog)">Remove</button>
       </div>
     </div>`;
   }).join("");
+  const inWs = new Set(db.models.map(m=>m.id));
+  const available = modelCatalog().filter(m=>!inWs.has(m.id));
+  const catalogHTML = `<div class="panel">
+    <h3>Model catalog <span class="conf-note">${available.length} not in this workspace</span></h3>
+    <p class="hint">Models belong to a workspace, not to LODESTONE — an inquiry uses the ones its question needs. Adding one here does not copy any data; runs you record stay with this workspace.</p>
+    ${available.length ? available.map(m=>`<div class="wsrow">
+        <div class="grow">
+          <div style="font-weight:600;">${esc(m.name)} <span class="conf-note">${esc(m.pub)}</span></div>
+          <div class="conf-note" style="margin-top:0.1rem;">${esc(m.what)}</div>
+        </div>
+        <button class="btn small primary" data-action="addModel" data-id="${esc(m.id)}">Add</button>
+      </div>`).join("") : `<div class="empty">Every catalogued model is already in this workspace.</div>`}
+  </div>`;
   const live = db.models.filter(m=>modelRun(m.id).mode!=="manual").length;
   return `
   <div class="view-head"><span class="view-title">Models &amp; runs</span></div>
 
+  ${db.models.length ? "" : `<div class="notice">This workspace has no models yet. Add the ones its question needs from the catalog below.</div>`}
   <h3 style="font-size:0.95rem; margin:0 0 0.5rem;">Recorded runs (${db.runs.length})</h3>
   <p class="view-sub" style="margin-top:0;">Every run — executed here or recorded by hand — is kept with its parameters, outputs, and provenance, newest first. <b>Save to library</b> makes a run citable from any card; <b>View result</b> reopens the full table.</p>
   ${db.runs.length?`<div class="gridwrap"><table class="grid"><thead><tr><th>Run</th><th>Record</th><th>Actions</th></tr></thead><tbody>${runRows}</tbody></table></div>`
@@ -1318,7 +1349,8 @@ function viewModels(){
 
   <h3 style="font-size:0.95rem; margin:1.6rem 0 0.4rem;">Registered models (${db.models.length})</h3>
   <p class="view-sub" style="margin-top:0;">${live} of ${db.models.length} have a callable interface LODESTONE can drive directly; the rest are Excel workbooks, proprietary runtimes, or interactive apps with no API, so they use guided-manual capture — you run them, LODESTONE records the parameters, outputs, and provenance so the run stays citable.</p>
-  ${cards}`;
+  ${cards}
+  ${catalogHTML}`;
 }
 
 
@@ -1968,6 +2000,23 @@ document.addEventListener("click", ev=>{
     db.ws.question = document.getElementById("setQ").value.trim();
     db.ws.criteria = document.getElementById("setCrit").value.split("\n").map(x=>x.trim()).filter(Boolean);
     save(); render(); toast("Workspace settings saved");
+  }
+  else if(a==="addModel"){
+    const m = catalogEntry(el.dataset.id);
+    if(!m){ toast("Unknown model"); return; }
+    if(db.models.some(x=>x.id===m.id)){ toast("Already in this workspace"); return; }
+    db.models.push(JSON.parse(JSON.stringify(m)));
+    journalHuman(`Add model ${m.id} (${m.name}) to this workspace`, {model:m.id});
+    save(); render(); toast(`${m.name} added`);
+  }
+  else if(a==="removeModel"){
+    const id = el.dataset.id;
+    const n = db.runs.filter(r=>r.modelId===id).length;
+    if(n){ toast(`${n} recorded run${n===1?"":"s"} reference this model — remove those first`); return; }
+    const m = db.models.find(x=>x.id===id);
+    db.models = db.models.filter(x=>x.id!==id);
+    journalHuman(`Remove model ${id}${m?` (${m.name})`:""} from this workspace`, {model:id});
+    save(); render(); toast("Model removed from this workspace");
   }
   else if(a==="wsSwitcher"){ openDlg(wsSwitcherHTML()); }
   else if(a==="wsGo"){ closeDlg(); switchWorkspace(el.dataset.id); }

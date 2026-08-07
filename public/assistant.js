@@ -183,7 +183,8 @@ const PARITY_MAP = {
   showOnBoard: "ui-only", briefToggle: "ui-only", briefAll: "ui-only",
   briefNone: "ui-only", genBrief: "ui-only",
   aSend: "ui-only", aClear: "ui-only", aToggle: "ui-only", aCtxClear: "ui-only",
-  aJustify: "ui-only", aConclude: "ui-only", csGoto: "ui-only",
+  aJustify: "ui-only", aConclude: "ui-only", aRedTeam: "ui-only",
+  aWebToggle: "exception:governance", csGoto: "ui-only",
 
   // documented exceptions (spec section 1.2) — withheld on purpose
   dlJson: "exception:export", dlMemo: "exception:export", dlBiblio: "exception:export",
@@ -859,7 +860,7 @@ async function aSend(prepared, task) {
   if (!q) { toast("Type a request first"); return; }
 
   const who = assistantActor();
-  const model = (who && who.model) || "claude-sonnet-5";
+  const model = assistantModel();
   // A named task may need more rounds than a chat turn; the user's setting is
   // the floor, not a ceiling the task cannot ask past.
   const userRounds = Math.max(1, Math.min(16, (db.settings && db.settings.maxToolRounds) || 12));
@@ -895,7 +896,8 @@ async function aSend(prepared, task) {
     for (let round = 0; round < maxRounds; round++) {
       const resp = await fetch("api/assistant", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: aConv, tools: toolSchemas(), model, task }),
+        body: JSON.stringify({ messages: aConv, tools: toolSchemas(), model, task,
+                               webTools: !!(db.settings && db.settings.webTools) }),
       });
       const data = await resp.json();
       if (!resp.ok) { entry.text = data.error || `Request failed (${resp.status})`; entry.error = true; break; }
@@ -1012,6 +1014,20 @@ function aResetForWorkspace() {
   loadChangeset();
 }
 
+/* ---------------- Named task: Red team ----------------
+   Formerly a mode welded to Opus. It is a recipe like any other, so it runs
+   on whichever model the user has chosen. */
+const REDTEAM_TASK = `The user wants an adversarial pass over this workspace's evidence.
+
+BUDGET FIRST: spend at most half your tool rounds reading. Batch calls.
+
+1. Read the board: list_cards, and run_audit for uncited, single_source, conflicts and criteria_gaps. Read the strongest-looking claims with get_card and get_justification.
+2. Attack the evidence, not the wording. Look for: facts graded "established" resting on a single source; recommendations whose depends-on chain does not actually reach a cited fact; assumptions nothing has tested; sources flagged possibly-superseded still carrying load; and alternative readings of the same data.
+3. Record what survives scrutiny as evidence rather than prose: create_card an open_question or risk for each attack that stands up, and link it to the card it targets (conflicts-with, or informs). Where a confidence grade is not earned, update_card to lower it and say why.
+4. Do not manufacture doubt. An attack you cannot ground in the workspace is not worth a card; say it in your answer instead.
+
+Then reply with the strongest three or four attacks, worst first, and say plainly which parts of the argument you could not shake.`;
+
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal
 // tool folding all its parameters into the first one as pseudo-XML). Strip
@@ -1069,8 +1085,13 @@ function renderAssistant() {
 
   rail.innerHTML = `
     <div class="arail-head">
-      <b style="font-size:0.85rem;">Assistant</b>
-      <span class="achip llm">${esc(who.name || "—")}</span>
+      <select id="aModelPick" title="Model — your choice, independent of the task" ${aBusy ? "disabled" : ""}
+              style="font-size:0.72rem; padding:0.1rem 0.2rem; max-width:9.5rem;">
+        ${ASSISTANT_MODELS.map(m => `<option value="${esc(m.model)}" ${assistantModel() === m.model ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+      </select>
+      <button class="btn small ${db.settings && db.settings.webTools ? "just" : ""}" data-action="aWebToggle"
+              title="${db.settings && db.settings.webTools ? "Web access is ON — pages are untrusted data" : "Web access is OFF — the assistant sees only this workspace"}">
+        ${db.settings && db.settings.webTools ? "🌐 Web on" : "Web off"}</button>
       ${ctxChip}
       <span style="flex:1"></span>
       <button class="btn small" data-action="aClear" ${aBusy ? "disabled" : ""}>Clear</button>
@@ -1089,7 +1110,8 @@ function renderAssistant() {
       <textarea id="aInput" placeholder="Ask, or instruct… (Enter to send, Shift+Enter for a new line)" ${aBusy ? "disabled" : ""}></textarea>
       <div style="display:flex;gap:0.4rem;margin-top:0.4rem;align-items:center;">
         <button class="btn primary small" data-action="aSend" ${aBusy ? "disabled" : ""}>Send</button>
-        <span class="conf-note" style="font-size:0.66rem;">Reads, model runs and edits. Edits are staged for your review.</span>
+        <button class="btn small" data-action="aRedTeam" ${aBusy ? "disabled" : ""} title="Adversarial pass over the board — runs on whichever model you have chosen">Red-team</button>
+        <button class="btn small" data-action="aConclude" ${aBusy ? "disabled" : ""} title="Form a recommendation for the decision question and justify it">Conclude</button>
       </div>
     </div>`;
 
@@ -1128,6 +1150,11 @@ document.addEventListener("click", (ev) => {
                if (node) { node.scrollIntoView({ block: "center", behavior: "smooth" }); node.classList.add("flash"); setTimeout(() => node.classList.remove("flash"), 1400); } }
     else if (sid) { view = "library"; render(); }
   }
+  else if (a === "aWebToggle") {
+    db.settings.webTools = !db.settings.webTools; save(); render();
+    toast(db.settings.webTools ? "Web access on — page content is untrusted data" : "Web access off");
+  }
+  else if (a === "aRedTeam") { aOpen = true; render(); aSend("Red-team this workspace's evidence.", REDTEAM_TASK); }
   else if (a === "aConclude") {
     aOpen = true; render();
     aSend("Form and justify a conclusion for this workspace's decision question.", CONCLUDE_TASK);
@@ -1137,6 +1164,13 @@ document.addEventListener("click", (ev) => {
     aSend(`Justify card ${el.dataset.id}.`, JUSTIFY_TASK);
   }
   else if (a === "aAskCard") { aCtx = { kind: "card", id: el.dataset.id }; aOpen = true; render(); aSend(`Justify card ${el.dataset.id}: what supports it, what conflicts with it, and how solid is it?`); }
+});
+
+document.addEventListener("change", (ev) => {
+  if (ev.target && ev.target.id === "aModelPick") {
+    db.settings.assistantModel = ev.target.value; save(); render();
+    toast(`Assistant model: ${ev.target.selectedOptions[0].text}`);
+  }
 });
 
 document.addEventListener("keydown", (ev) => {

@@ -255,7 +255,7 @@ const NEEDS_SOURCE = ["fact","opportunity","tradeoff","risk","recommendation"];
 /* Seed version. Bump whenever evidence is added to the seed below, and add a
    matching entry to SEED_ADDITIONS so workspaces already in localStorage pick
    the new evidence up without being reset (which would discard saved runs). */
-const SEED_VERSION = 9;
+const SEED_VERSION = 10;
 
 /* Evidence added after the original seed, keyed by the version that introduced
    it. Kept as data so seedData() and the migration in load() share one
@@ -304,6 +304,12 @@ const SEED_ADDITIONS = {
       {id:"seed",  kind:"system", name:"Seeded evidence"},
     ],
     settings: { activeActor:"user1", assistantActor:"LLM3", approvalMode:"staged", maxToolRounds:12 }
+  },
+  10: {
+    // Model choice is no longer bound to a task. One LLM actor per model, and
+    // the old role-bound actors (Workbench assistant / Red team) are left in
+    // place rather than deleted so existing attributions keep resolving.
+    settings: { assistantModel: "claude-sonnet-5", webTools: false }
   },
   9: {
     // P2: the changeset journal. Every assistant-authored change is
@@ -517,6 +523,7 @@ function load(){
     try { const raw = localStorage.getItem(LS_KEY); if(raw) legacy = JSON.parse(raw); } catch(e){}
     const id = "w1";
     db = legacy || seedData();
+    ensureLlmActors(db);
     applySeedAdditions(db);
     wsIndex = { activeId: id, list: [{ id, title: db.ws.title, question: db.ws.question,
       updated: today(), cards: db.cards.length, sources: db.sources.length }] };
@@ -528,6 +535,7 @@ function load(){
   wsIndex.activeId = id;
   try { db = JSON.parse(localStorage.getItem(wsKey(id))); } catch(e){ db = null; }
   if(!db){ db = seedData(); }
+  ensureLlmActors(db);
   const n = applySeedAdditions(db);
   if (n) { saveWorkspace(); setTimeout(()=>toast(`${n} new seeded item(s) added to this workspace`), 400); }
   touchIndex();
@@ -564,6 +572,7 @@ function blankWorkspace(title, question, criteria){
   d.ws = { title: title || "Untitled workspace", question: question || "", criteria: criteria || [] };
   if(db && db.actors)   d.actors   = JSON.parse(JSON.stringify(db.actors));
   if(db && db.settings) d.settings = JSON.parse(JSON.stringify(db.settings));
+  ensureLlmActors(d);
   return d;
 }
 
@@ -636,10 +645,38 @@ function source(id){ return db.sources.find(s=>s.id===id); }
    string, which is how two LLM actors with different models coexist.
    Honest caveat: with no authentication the active human actor is declared,
    not verified — this is attribution, not identity. */
+/* Assistant models are chosen freely; a task ("red team") is a prompt recipe,
+   not a model binding. Each model is its own LLM actor, so attribution says
+   which model made an edit. `provider` is explicit because adding a
+   non-Anthropic model is a server-side credential-and-SDK change, not just a
+   new entry here. */
+const ASSISTANT_MODELS = [
+  { model:"claude-opus-5",   name:"Claude Opus 5",   provider:"anthropic" },
+  { model:"claude-sonnet-5", name:"Claude Sonnet 5", provider:"anthropic" },
+  { model:"claude-fable-5",  name:"Claude Fable 5",  provider:"anthropic" },
+  { model:"claude-haiku-4-5",name:"Claude Haiku 4.5",provider:"anthropic" },
+];
+function llmActorId(model){ return "llm:" + model; }
+// Ensure every known model has an actor, so attribution never dangles.
+function ensureLlmActors(target){
+  target.actors = target.actors || [];
+  let added = 0;
+  for(const m of ASSISTANT_MODELS){
+    if(!target.actors.some(a=>a.id===llmActorId(m.model))){
+      target.actors.push({ id:llmActorId(m.model), kind:"llm", name:m.name, model:m.model, provider:m.provider });
+      added++;
+    }
+  }
+  return added;
+}
 function actors(){ return db.actors || []; }
 function actor(id){ return actors().find(a=>a.id===id); }
 function activeActor(){ return actor(db.settings && db.settings.activeActor) || actors().find(a=>a.kind==="human") || null; }
-function assistantActor(){ return actor(db.settings && db.settings.assistantActor) || actors().find(a=>a.kind==="llm") || null; }
+function assistantModel(){
+  const m = db.settings && db.settings.assistantModel;
+  return ASSISTANT_MODELS.some(x=>x.model===m) ? m : "claude-sonnet-5";
+}
+function assistantActor(){ return actor(llmActorId(assistantModel())) || actors().find(a=>a.kind==="llm") || null; }
 function actorId(){ const a = activeActor(); return a ? a.id : "unknown"; }
 // One renderer per referenceable entity — actors included, so a rename
 // propagates everywhere and a dangling reference stays visible.
@@ -1562,8 +1599,14 @@ function viewSettings(){
     <p class="hint">Every edit is credited to an actor — human or LLM. An LLM actor is a named configuration (a role plus a model), so several can coexist. With no authentication in this prototype the human actor is <b>declared, not verified</b>: this is attribution, not identity.</p>
     <div class="frow"><label for="setActor">You are editing as</label>
       <select id="setActor">${actors().filter(a=>a.kind==="human").map(a=>`<option value="${esc(a.id)}" ${db.settings.activeActor===a.id?"selected":""}>${esc(a.name)} (${esc(a.id)})</option>`).join("")}</select></div>
-    <div class="frow"><label for="setAsstActor">Assistant actor</label>
-      <select id="setAsstActor">${actors().filter(a=>a.kind==="llm").map(a=>`<option value="${esc(a.id)}" ${db.settings.assistantActor===a.id?"selected":""}>${esc(a.name)} (${esc(a.id)}) — ${esc(a.model||"")}</option>`).join("")}</select></div>
+    <div class="frow"><label for="setAsstModel">Assistant model — your choice, independent of the task</label>
+      <select id="setAsstModel">${ASSISTANT_MODELS.map(m=>`<option value="${esc(m.model)}" ${assistantModel()===m.model?"selected":""}>${esc(m.name)} — ${esc(m.model)}</option>`).join("")}</select></div>
+    <div class="frow"><label for="setWeb">Web access</label>
+      <select id="setWeb">
+        <option value="off" ${db.settings.webTools?"":"selected"}>Off — the assistant sees only this workspace</option>
+        <option value="on" ${db.settings.webTools?"selected":""}>On — allow web search and page fetching</option>
+      </select></div>
+    <p class="hint" style="margin:-0.2rem 0 0.6rem;">With web access on, anything the assistant reads from a page is <b>untrusted data, not instructions</b>, and is outside this workspace until it is captured as a source. Web search and fetch are billed by Anthropic in addition to tokens.</p>
     <div class="frow"><label for="setRounds">Max tool rounds per chat request (1–16). Named tasks such as Justify may use up to 14.</label>
       <input type="number" id="setRounds" min="1" max="16" value="${esc(db.settings.maxToolRounds)}"></div>
     <div class="frow"><label for="setApproval">Approval mode (applies to assistant edits — P2)</label>
@@ -2096,7 +2139,8 @@ document.addEventListener("click", ev=>{
   else if(a==="saveAsst"){
     const rounds = Math.max(1, Math.min(16, Number(document.getElementById("setRounds").value) || 8));
     db.settings.activeActor = document.getElementById("setActor").value;
-    db.settings.assistantActor = document.getElementById("setAsstActor").value;
+    db.settings.assistantModel = document.getElementById("setAsstModel").value;
+    db.settings.webTools = document.getElementById("setWeb").value === "on";
     db.settings.approvalMode = document.getElementById("setApproval").value;
     db.settings.maxToolRounds = rounds;
     save(); render(); toast("Assistant settings saved");

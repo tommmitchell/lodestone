@@ -11,6 +11,9 @@ node_modules/
 # Assistant conversation logs — they quote workspace evidence verbatim.
 conversations/
 
+# Workspace backups — full copies of the evidence.
+backups/
+
 # Evidence content. The tool is public; the analysis is not.
 # Start from public/seed.example.js.
 public/seed.js

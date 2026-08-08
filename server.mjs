@@ -48,6 +48,7 @@ const CONFIG_PATH = path.join(here, ".config.json");
 const SESSION_STARTED = new Date();
 const SESSION_DATE = SESSION_STARTED.toISOString().slice(0, 10);
 const LOG_DIR = path.join(here, "conversations");
+const BACKUP_DIR = path.join(here, "backups");
 const LOG_PATH = path.join(LOG_DIR, `lodestone-${SESSION_DATE}.md`);
 let logHeaderWritten = false;
 
@@ -961,6 +962,68 @@ const server = http.createServer(async (req, res) => {
 
   // Lets the page discover what this deployment can actually do. The published
   // artifact gets no response at all, so its UI honestly reports "local only".
+  /* Backups. LODESTONE has no undo, so a snapshot before anything sweeping —
+     and on demand — is the whole safety net. Whole-workspace by design: a
+     snapshot cannot half-restore the way a computed inverse can. */
+  if (req.method === "POST" && url.pathname === "/api/backup") {
+    let raw = "";
+    req.setEncoding("utf8");
+    for await (const chunk of req) { raw += chunk; if (raw.length > 40_000_000) break; }
+    try {
+      const body = JSON.parse(raw || "{}");
+      if (!body.workspace) throw new Error("No workspace content supplied.");
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(BACKUP_DIR, { recursive: true });
+      const slug = String(body.title || "workspace").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "workspace";
+      const d = new Date();
+      const stamp = `${d.toISOString().slice(0,10)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+      const name = `${slug}-${stamp}.json`;
+      await writeFile(path.join(BACKUP_DIR, name), JSON.stringify(body.workspace, null, 1), "utf8");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, file: name, reason: body.reason || "manual" }));
+    } catch (e) {
+      console.error("[backup] failed:", e.message);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: `Backup failed: ${e.message}` }));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/backups") {
+    try {
+      const { readdir, stat } = await import("node:fs/promises");
+      let names = [];
+      try { names = await readdir(BACKUP_DIR); } catch { names = []; }
+      const items = [];
+      for (const n of names.filter(x => x.endsWith(".json"))) {
+        const st = await stat(path.join(BACKUP_DIR, n));
+        items.push({ file: n, size: st.size, modified: st.mtime.toISOString() });
+      }
+      items.sort((a, b) => b.modified.localeCompare(a.modified));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ items: items.slice(0, 40) }));
+    } catch (e) {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/backup/")) {
+    // Basename only: a crafted path must not escape the backups directory.
+    const name = path.basename(decodeURIComponent(url.pathname.slice("/api/backup/".length)));
+    try {
+      const data = await readFile(path.join(BACKUP_DIR, name), "utf8");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(data);
+    } catch (e) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: `No backup named ${name}` }));
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/log") {
     let raw = "";
     req.setEncoding("utf8");
@@ -1037,6 +1100,7 @@ const server = http.createServer(async (req, res) => {
       spentTodayUsd: Math.round(todaySpend() * 10000) / 10000,
       limitSource,
       logFile: path.basename(LOG_PATH),
+      backupDir: "backups",
       run: runnableModelIds(),
       ready: r.ready,
       reason: r.reason,

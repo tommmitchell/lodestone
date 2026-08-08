@@ -563,6 +563,49 @@ function modelCatalog(){
 }
 function catalogEntry(id){ return modelCatalog().find(m=>m.id===id); }
 
+/* Backups. LODESTONE has no undo, so a full snapshot is the safety net —
+   taken on demand, and automatically before anything sweeping. Whole-workspace
+   by design: a snapshot cannot half-restore the way a computed inverse can.
+   The cost is that restoring also discards work done after the snapshot, which
+   is why they are timestamped and restoring is a deliberate act. */
+async function backupWorkspace(reason){
+  try {
+    const r = await fetch("api/backup", { method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ title: db.ws.title, reason: reason||"manual", workspace: db }) });
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    return d.file;
+  } catch(e){
+    toast(`Backup failed: ${e.message}. Nothing was changed.`);
+    return null;
+  }
+}
+
+async function restoreWorkspace(file){
+  if(!confirm(`Restore this workspace from ${file}?\n\nEverything currently in “${db.ws.title}” is replaced, including anything done since that snapshot. A backup of the current state is taken first, so this is itself undoable.`)) return;
+  const safety = await backupWorkspace("before-restore");
+  if(!safety) return;                       // refuse to restore if we could not snapshot first
+  try {
+    const r = await fetch("api/backup/"+encodeURIComponent(file), {cache:"no-store"});
+    const data = await r.json();
+    if(data.error) throw new Error(data.error);
+    if(!data.ws || !Array.isArray(data.cards)) throw new Error("That file is not a workspace snapshot.");
+    db = data;
+    ensureLlmActors(db); applySeedAdditions(db);
+    saveWorkspace(); touchIndex();
+    if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+    view="board"; filters={type:"all",q:"",tag:""}; briefSel=null; render();
+    toast(`Restored from ${file} · previous state saved as ${safety}`);
+  } catch(e){ toast(`Restore failed: ${e.message}`); }
+}
+
+let backupList = [];
+async function refreshBackups(){
+  try { const r = await fetch("api/backups",{cache:"no-store"}); const d = await r.json(); backupList = d.items||[]; }
+  catch(e){ backupList = []; }
+  if(view==="settings") render();
+}
+
 function blankWorkspace(title, question, criteria){
   const d = seedData();
   // A new workspace starts with nothing of its own: no evidence, no library,
@@ -1633,6 +1676,21 @@ function viewSettings(){
     <p class="hint" style="margin-top:0.6rem;">Registered actors: ${actors().map(a=>`${actorRef(a.id)}<span class="conf-note"> ${esc(a.kind)}${a.model?` · ${esc(a.model)}`:""}</span>`).join(" · ")}</p>
   </div>
   <div class="panel">
+    <h3>Backups <span class="conf-note">${backupList.length} saved</span></h3>
+    <p class="hint">A backup is a full copy of this workspace. One is taken automatically before an import, and you can take one any time. Restoring replaces everything in the workspace — including anything done since the snapshot — so it takes a backup of the current state first.</p>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+      <button class="btn primary" data-action="backupNow">Back up this workspace</button>
+      <button class="btn" data-action="refreshBackups">Refresh list</button>
+    </div>
+    ${backupList.length ? backupList.slice(0,12).map(b=>`<div class="wsrow">
+        <div class="grow">
+          <div style="font-weight:600; font-size:0.8rem;">${esc(b.file)}</div>
+          <div class="conf-note">${esc(b.modified.replace("T"," ").slice(0,16))} · ${(b.size/1024).toFixed(0)} KB</div>
+        </div>
+        <button class="btn small danger" data-action="restoreBackup" data-file="${esc(b.file)}">Restore</button>
+      </div>`).join("") : `<div class="empty">No backups yet.</div>`}
+  </div>
+  <div class="panel">
     <h3>Data</h3>
     <p class="hint">All data lives in this browser's local storage (prototype; FR-G audit trail and multi-user are backend features). Export before clearing your browser data.</p>
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -2124,6 +2182,15 @@ document.addEventListener("click", ev=>{
     journalHuman(`Remove model ${id}${m?` (${m.name})`:""} from this workspace`, {model:id});
     save(); render(); toast("Model removed from this workspace");
   }
+  else if(a==="nav" && el.dataset.view==="settings"){
+    view = "settings"; render();
+    if(!backupList.length) refreshBackups();     // outside render(), so nothing live is detached
+  }
+  else if(a==="backupNow"){
+    backupWorkspace("manual").then(f=>{ if(f){ toast(`Backed up as ${f}`); refreshBackups(); } });
+  }
+  else if(a==="refreshBackups"){ refreshBackups(); }
+  else if(a==="restoreBackup"){ restoreWorkspace(el.dataset.file); }
   else if(a==="wsRename"){
     const e = wsIndex.list.find(x=>x.id===el.dataset.id); if(!e) return;
     const t = prompt("Workspace title:", e.title);
@@ -2200,10 +2267,14 @@ document.addEventListener("change", ev=>{
   if(ev.target.id==="importFile"){
     const f = ev.target.files[0]; if(!f) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(reader.result);
         if(!data.cards || !data.sources || !data.ws) throw new Error("not a LODESTONE workspace");
+        // Snapshot before any sweeping change. Import currently creates a NEW
+        // workspace so the open one is untouched, but the backup costs nothing
+        // and covers imports that apply in place (external changesets).
+        await backupWorkspace("before-import");
         // Import into a NEW workspace rather than overwriting the open one — the
         // destructive version was easy to trigger by accident.
         const t = (data.ws && data.ws.title) || "Imported workspace";

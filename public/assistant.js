@@ -75,6 +75,12 @@ function cardFull(c) {
    whole staged-approval design. It now lives in db alongside the workspace. */
 let aChangeset = null;    // mirror of db.pendingChangeset for the current turn
 
+/* Who is credited for a mutation. Normally the LLM actor driving the panel;
+   during an external changeset import, the file's author. One place to decide
+   it, so no action has to know where it is being called from. */
+let authorOverride = null;
+function authoringActorId(){ return authorOverride || authoringActorId() || null; }
+
 function loadChangeset() {
   aChangeset = (db.pendingChangeset && db.pendingChangeset.status === "staged" && (db.pendingChangeset.ops || []).length)
     ? db.pendingChangeset : null;
@@ -82,7 +88,7 @@ function loadChangeset() {
 function persistChangeset() { db.pendingChangeset = aChangeset; save(); }
 
 function newChangeset(task) {
-  return { id: uid("cs"), task: task || "assistant edits", actor: (assistantActor() || {}).id || null,
+  return { id: uid("cs"), task: task || "assistant edits", actor: authoringActorId(),
            created: today(), status: "staged", approvedBy: null, ops: [] };
 }
 function pendingOps() { return aChangeset && aChangeset.status === "staged" ? aChangeset.ops.filter(o => o.status === "pending") : []; }
@@ -189,6 +195,7 @@ const PARITY_MAP = {
   aSend: "ui-only", aClear: "ui-only", aToggle: "ui-only", aCtxClear: "ui-only",
   aJustify: "ui-only", aConclude: "ui-only", aRedTeam: "ui-only", aPopulate: "ui-only",
   aWebToggle: "exception:governance", csGoto: "ui-only",
+  csImportApply: "exception:governance", dlBriefing: "exception:export",
 
   // documented exceptions (spec section 1.2) — withheld on purpose
   dlJson: "exception:export", dlMemo: "exception:export", dlBiblio: "exception:export",
@@ -446,7 +453,7 @@ const ACTIONS = {
     kind: "read",
     desc: "The actor registry: who can make edits in this workspace, human or LLM, and the canonical name each edit is credited to.",
     schema: { type: "object", properties: {}, additionalProperties: false },
-    run: () => ({ items: actors(), active_human: (activeActor() || {}).id, you: (assistantActor() || {}).id }),
+    run: () => ({ items: actors(), active_human: (activeActor() || {}).id, you: authoringActorId() }),
   },
 
   /* ---- mutations (P2). Each validates as the interface does, stamps the
@@ -485,7 +492,7 @@ const ACTIONS = {
         links: (p.links || []).map(l => ({ to: l.to, rel: l.rel })),
         criteria: [], owner: "", origin: "assistant",
         created: today(), updated: today(),
-        createdBy: (assistantActor() || {}).id, updatedBy: (assistantActor() || {}).id,
+        createdBy: authoringActorId(), updatedBy: authoringActorId(),
       };
       db.cards.push(c);
       recordOp("create_card", p, { card: c.id }, { kind: "removeCard", id: c.id },
@@ -516,7 +523,7 @@ const ACTIONS = {
       if (p.tags !== undefined) { c.tags = p.tags.map(t => String(t).toLowerCase().slice(0, 40)).slice(0, 8); changed.push("tags"); }
       if (p.status !== undefined) { c.status = p.status; changed.push(`status → ${p.status}`); }
       if (!changed.length) return { error: "Nothing to change — pass at least one field." };
-      c.updated = today(); c.updatedBy = (assistantActor() || {}).id;
+      c.updated = today(); c.updatedBy = authoringActorId();
       recordOp("update_card", p, { card: c.id }, { kind: "restoreCard", card: before },
                `Update ${c.id}: ${changed.join(", ")}${p.reason ? ` — ${p.reason}` : ""}`);
       return { updated: c.id, changed };
@@ -534,7 +541,7 @@ const ACTIONS = {
       const before = JSON.parse(JSON.stringify(c));
       c.status = "deprecated";
       c.detail = (c.detail ? c.detail + "\n\n" : "") + `Deprecated: ${p.reason}`;
-      c.updated = today(); c.updatedBy = (assistantActor() || {}).id;
+      c.updated = today(); c.updatedBy = authoringActorId();
       recordOp("deprecate_card", p, { card: c.id }, { kind: "restoreCard", card: before },
                `Deprecate ${c.id} — ${p.reason}`);
       return { deprecated: c.id };
@@ -556,7 +563,7 @@ const ACTIONS = {
       if (!RELS.includes(p.rel)) return { error: `rel must be one of: ${RELS.join(", ")}.` };
       if (a.links.some(l => l.to === p.to && l.rel === p.rel)) return { error: `${p.from} already ${p.rel} ${p.to}.` };
       a.links.push({ to: p.to, rel: p.rel });
-      a.updated = today(); a.updatedBy = (assistantActor() || {}).id;
+      a.updated = today(); a.updatedBy = authoringActorId();
       recordOp("link_cards", p, { card: p.from, from: p.from, to: p.to },
                { kind: "removeLink", from: p.from, to: p.to, rel: p.rel },
                `Link ${p.from} —${p.rel}→ ${p.to}`);
@@ -575,7 +582,7 @@ const ACTIONS = {
       const i = a.links.findIndex(l => l.to === p.to && (!p.rel || l.rel === p.rel));
       if (i < 0) return { error: `No link from ${p.from} to ${p.to}.` };
       const [gone] = a.links.splice(i, 1);
-      a.updated = today(); a.updatedBy = (assistantActor() || {}).id;
+      a.updated = today(); a.updatedBy = authoringActorId();
       recordOp("unlink_cards", p, { card: p.from },
                { kind: "restoreLink", from: p.from, link: gone },
                `Unlink ${p.from} —${gone.rel}→ ${p.to}`);
@@ -596,7 +603,7 @@ const ACTIONS = {
       if (!source(p.sourceId)) return { error: `No source ${p.sourceId} in this workspace.` };
       if (c.citations.some(x => x.sourceId === p.sourceId && x.locator === p.locator)) return { error: "That citation is already on the card." };
       c.citations.push({ sourceId: p.sourceId, locator: String(p.locator).slice(0, 140) });
-      c.updated = today(); c.updatedBy = (assistantActor() || {}).id;
+      c.updated = today(); c.updatedBy = authoringActorId();
       recordOp("cite", p, { card: p.cardId },
                { kind: "removeCite", cardId: p.cardId, sourceId: p.sourceId, locator: String(p.locator).slice(0, 140) },
                `Cite ${p.cardId} → ${p.sourceId} (${p.locator})`);
@@ -628,7 +635,7 @@ const ACTIONS = {
                   accessed: p.accessed || (p.kind === "web page" ? today() : ""),
                   excerpt: String(p.excerpt || "").slice(0, 1200),
                   notes: p.notes || "", addedAt: today(),
-                  createdBy: (assistantActor() || {}).id };
+                  createdBy: authoringActorId() };
       db.sources.push(s);
       recordOp("add_source", p, { source: s.id }, { kind: "removeSource", id: s.id },
                `Add ${p.kind === "web page" ? "web page" : "source"} ${s.id} — “${String(s.title).slice(0, 55)}”`);
@@ -643,7 +650,7 @@ const ACTIONS = {
     run: (p) => {
       const title = String(p.title || "").trim();
       if (!title) return { error: "title is required." };
-      const l = { id: uid("rl"), title, items: [], createdBy: (assistantActor() || {}).id };
+      const l = { id: uid("rl"), title, items: [], createdBy: authoringActorId() };
       db.lists.push(l);
       recordOp("create_list", p, { list: l.id }, { kind: "removeList", id: l.id }, `Create reading list “${title}”`);
       return { created: l.id };
@@ -768,7 +775,7 @@ const ACTIONS = {
         if (p[f] !== undefined) { s2[f] = String(p[f]); changed.push(f); }
       }
       if (!changed.length) return { error: "Nothing to change — pass at least one field." };
-      s2.updatedBy = (assistantActor() || {}).id;
+      s2.updatedBy = authoringActorId();
       recordOp("update_source", p, { source: s2.id }, { kind: "restoreSource", source: before },
                `Update source ${s2.id}: ${changed.join(", ")}${p.reason ? ` — ${p.reason}` : ""}`);
       return { updated: s2.id, changed };
@@ -787,7 +794,7 @@ const ACTIONS = {
       const s = { id: uid("s"), kind: "model run", title: `Model run: ${r.name}`,
                   author: "Workspace model run", date: r.date, url: m ? m.url : "", access: "open",
                   notes: `Params: ${r.params} | Outputs: ${String(r.outputs || "").slice(0, 600)}`,
-                  addedAt: today(), createdBy: (assistantActor() || {}).id };
+                  addedAt: today(), createdBy: authoringActorId() };
       db.sources.push(s); r.sourceId = s.id;
       recordOp("promote_run", p, { source: s.id }, { kind: "removeSource", id: s.id },
                `Promote run ${p.runId} to source ${s.id}`);
@@ -825,7 +832,7 @@ const ACTIONS = {
         outputs: `${data.summary} ${runHighlights(data)}`.trim(),
         notes: `Executed by LODESTONE against ${data.endpoint} in ${data.ms} ms.`,
         date: today(), runner: `LODESTONE (assistant: ${(assistantActor() || {}).name || "LLM"})`,
-        createdBy: (assistantActor() || {}).id || null, sourceId: null,
+        createdBy: authoringActorId() || null, sourceId: null,
         result: { columns: data.columns, rows: data.rows, summary: data.summary, endpoint: data.endpoint,
                   ms: data.ms, artifacts: data.artifacts, extraction: data.extraction, appliedParams: data.appliedParams },
       };
@@ -1101,6 +1108,342 @@ function logExchange(userText, entry, task) {
     .catch(() => { if (!logWarned) { logWarned = true; toast("The conversation could not be written to the session log"); } });
 }
 
+
+/* ============================================================================
+   X1 — EXTERNAL CHANGESETS.
+   A file of proposed edits, written by an assistant working outside the app.
+   Every operation is a call to an ACTIONS registry entry, so an imported file
+   inherits the same validation, inverses, review surface and journal as an
+   in-app edit. This is a transport for the only way to mutate a workspace,
+   not a second way. See LODESTONE-External-Changeset-Spec.md.
+   ========================================================================= */
+
+const CHANGESET_FORMAT = 1;
+
+// Actions an external file may call: mutations only. Reads are pointless in a
+// file (the author already saw the briefing), and run_model is excluded
+// because a run record must come from a run that actually executed.
+function externallyAllowed(name){
+  const a = ACTIONS[name];
+  return !!a && a.kind === "mutate";
+}
+
+// Replace "$label" anywhere in a params tree with the id it resolved to.
+function substituteRefs(value, table, unresolved){
+  if (typeof value === "string") {
+    if (value.startsWith("$")) {
+      if (Object.prototype.hasOwnProperty.call(table, value)) return table[value];
+      unresolved.push(value);
+      return value;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(v => substituteRefs(v, table, unresolved));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = substituteRefs(v, table, unresolved);
+    return out;
+  }
+  return value;
+}
+
+/* Validate without touching anything. Labels are resolved symbolically: a
+   label defined by an earlier op counts as resolvable even though the real id
+   does not exist yet. */
+function validateChangeset(file){
+  const errors = [], warnings = [], ops = [];
+  if (!file || file.lodestone !== "changeset") errors.push("Not a LODESTONE changeset (missing \"lodestone\": \"changeset\").");
+  if (file && file.formatVersion !== CHANGESET_FORMAT) errors.push(`Unsupported formatVersion ${file && file.formatVersion} — this build reads version ${CHANGESET_FORMAT}.`);
+  if (errors.length) return { ok:false, errors, warnings, ops };
+
+  const list = Array.isArray(file.ops) ? file.ops : [];
+  if (!list.length) errors.push("The changeset contains no operations.");
+
+  // target
+  const t = file.target || {};
+  if (t.workspaceId && t.workspaceId !== wsIndex.activeId) {
+    const named = (wsIndex.list.find(w => w.id === t.workspaceId) || {}).title;
+    errors.push(`This changeset targets ${named ? `“${named}”` : `workspace ${t.workspaceId}`}, but “${db.ws.title}” is open. Open that workspace first.`);
+  } else if (!t.workspaceId && t.title && t.title !== db.ws.title) {
+    warnings.push(`The changeset names “${t.title}” and the open workspace is “${db.ws.title}”. It carries no workspace id, so this cannot be checked properly.`);
+  }
+  const fp = `c${db.cards.length}-s${db.sources.length}-r${db.runs.length}`;
+  if (t.fingerprint && t.fingerprint !== fp) {
+    warnings.push(`The board has changed since the briefing (was ${t.fingerprint}, now ${fp}). Ids still resolve, but read the operations before accepting.`);
+  }
+
+  const defined = {};                       // label -> placeholder
+  list.forEach((op, i) => {
+    const where = `op ${i + 1}${op && op.action ? ` (${op.action})` : ""}`;
+    const rec = { index:i, action: op && op.action, describe:"", ok:true, reason:null, op };
+    if (!op || typeof op.action !== "string") { rec.ok=false; rec.reason="No action named."; ops.push(rec); return; }
+    if (!ACTIONS[op.action]) { rec.ok=false; rec.reason=`Unknown action “${op.action}”.`; ops.push(rec); return; }
+    if (!externallyAllowed(op.action)) {
+      rec.ok=false;
+      rec.reason = ACTIONS[op.action].kind === "run"
+        ? "run_model cannot be imported: a run record must come from a run that actually executed."
+        : `“${op.action}” is a ${ACTIONS[op.action].kind} action and cannot be imported.`;
+      ops.push(rec); return;
+    }
+    if (op.as) {
+      if (!/^\$[A-Za-z][A-Za-z0-9_]*$/.test(op.as)) { rec.ok=false; rec.reason=`Bad label “${op.as}” — use $name.`; ops.push(rec); return; }
+      if (defined[op.as]) { rec.ok=false; rec.reason=`Label ${op.as} is defined twice.`; ops.push(rec); return; }
+      defined[op.as] = true;
+    }
+    // references
+    const unresolved = [];
+    substituteRefs(op.params || {}, defined, unresolved);
+    if (unresolved.length) {
+      rec.ok=false;
+      rec.reason=`References ${[...new Set(unresolved)].join(", ")} before ${unresolved.length>1?"they are":"it is"} defined.`;
+      ops.push(rec); return;
+    }
+    // real ids must exist now
+    const p = op.params || {};
+    const missing = [];
+    const checkCard = v => { if (typeof v === "string" && !v.startsWith("$") && !card(v)) missing.push(v); };
+    const checkSrc  = v => { if (typeof v === "string" && !v.startsWith("$") && !source(v)) missing.push(v); };
+    ["id","from","to"].forEach(k => { if (p[k] && op.action !== "update_source" && op.action !== "add_to_list" && op.action !== "remove_from_list") checkCard(p[k]); });
+    if (op.action === "update_source" && p.id) checkSrc(p.id);
+    if (p.cardId) checkCard(p.cardId);
+    if (p.sourceId) checkSrc(p.sourceId);
+    (p.citations || []).forEach(c => checkSrc(c && c.sourceId));
+    (p.links || []).forEach(l => checkCard(l && l.to));
+    if (missing.length) { rec.ok=false; rec.reason=`Refers to ${[...new Set(missing)].join(", ")}, which ${missing.length>1?"do":"does"} not exist in this workspace.`; }
+    rec.describe = describeOp(op);
+    ops.push(rec);
+  });
+
+  Object.keys(defined).forEach(lbl => {
+    const used = JSON.stringify(list).includes(`"${lbl}"`);
+    if (!used) warnings.push(`Label ${lbl} is defined but never referenced.`);
+  });
+
+  return { ok: errors.length === 0, errors, warnings, ops,
+           ready: ops.filter(o=>o.ok).length, rejected: ops.filter(o=>!o.ok).length };
+}
+
+function describeOp(op){
+  const p = op.params || {};
+  switch(op.action){
+    case "create_card": return `Create ${TYPES[p.type] ? TYPES[p.type].label : p.type} — “${String(p.statement||"").slice(0,70)}”`;
+    case "add_source":  return `Add ${p.kind==="web page"?"web page":"source"} — “${String(p.title||"").slice(0,60)}”`;
+    case "link_cards":  return `Link ${p.from} —${p.rel}→ ${p.to}`;
+    case "unlink_cards":return `Unlink ${p.from} → ${p.to}`;
+    case "cite":        return `Cite ${p.cardId} → ${p.sourceId}${p.locator?` (${p.locator})`:""}`;
+    case "update_card": return `Update ${p.id}${p.reason?` — ${p.reason}`:""}`;
+    case "deprecate_card": return `Deprecate ${p.id} — ${p.reason||""}`;
+    case "update_source":  return `Update source ${p.id}`;
+    case "create_list": return `Create reading list “${p.title}”`;
+    case "add_to_list": return `Add ${p.sourceId} to list ${p.listId}`;
+    case "add_model":   return `Add model ${p.modelId}`;
+    default: return `${op.action}`;
+  }
+}
+
+/* Apply a validated changeset. Every op still executes through its registry
+   entry, so nothing here bypasses validation — this only resolves labels and
+   attributes authorship. */
+async function applyChangeset(file, report){
+  const author = file.author || {};
+  const actorId = registerExternalActor(author);
+  const table = {}, applied = [], failed = [];
+
+  authorOverride = actorId;
+  aChangeset = newChangeset(file.note || `Imported changeset${author.name ? ` from ${author.name}` : ""}`);
+  aChangeset.via = "external changeset";
+  persistChangeset();
+  try {
+    for (const rec of report.ops) {
+      if (!rec.ok) { failed.push({ ...rec }); continue; }
+      const op = rec.op;
+      const unresolved = [];
+      const params = substituteRefs(op.params || {}, table, unresolved);
+      if (unresolved.length) { failed.push({ ...rec, reason:`Unresolved ${unresolved.join(", ")}` }); continue; }
+      const out = await execAction(op.action, params);
+      if (out && out.error) { failed.push({ ...rec, reason: out.error }); continue; }
+      if (op.as) table[op.as] = out.created || out.added || out.updated || out.cited || null;
+      applied.push(rec);
+    }
+  } finally { authorOverride = null; }
+
+  if (!aChangeset.ops.length) { aChangeset = null; db.pendingChangeset = null; save(); }
+  else persistChangeset();
+  return { applied: applied.length, failed };
+}
+
+function registerExternalActor(author){
+  const slug = String(author.model || author.name || "external")
+    .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40) || "external";
+  const id = "ext:" + slug;
+  db.actors = db.actors || [];
+  if (!db.actors.some(a => a.id === id)) {
+    db.actors.push({ id, kind:"llm", name: `${author.name || slug} (external)`,
+                     model: author.model || "", external: true });
+    save();
+  }
+  return id;
+}
+
+
+/* ============================================================================
+   X2 — BRIEFING. Everything an outside assistant needs, in one file: what the
+   workspace is, what is already on it, what may be done, and in what format to
+   reply. Generated from the live registry, so it cannot drift from what the
+   app will actually accept, and provider-neutral by construction — plain
+   markdown and JSON Schema, no Anthropic or OpenAI concepts anywhere.
+   ========================================================================= */
+function buildBriefing(){
+  const fp = `c${db.cards.length}-s${db.sources.length}-r${db.runs.length}`;
+  const L = [];
+  L.push(`# LODESTONE briefing — ${db.ws.title}`);
+  L.push("");
+  L.push(`You are proposing edits to an evidence workbench. Read this, then reply with a **changeset file** (§4) and nothing else.`);
+  L.push("");
+  L.push(`## 1. The question this workspace exists to answer`);
+  L.push("");
+  L.push(`**${db.ws.question || "(no decision question set)"}**`);
+  if (db.ws.criteria.length){
+    L.push("");
+    L.push(`Decision criteria (referenced by index, 0-based):`);
+    db.ws.criteria.forEach((c,i)=>L.push(`${i}. ${c}`));
+  }
+  L.push("");
+  L.push(`Workspace id \`${wsIndex.activeId}\` · fingerprint \`${fp}\` · ${db.cards.length} cards, ${db.sources.length} sources, ${db.runs.length} runs.`);
+  L.push("");
+
+  L.push(`## 2. What is already on the board`);
+  L.push("");
+  if (!db.cards.length) L.push("*No cards yet.*");
+  else {
+    L.push("| id | type | confidence | statement | links |");
+    L.push("|---|---|---|---|---|");
+    for (const c of db.cards){
+      const links = (c.links||[]).map(l=>`${l.rel}→${l.to}`).join(", ");
+      L.push(`| ${c.id} | ${c.type} | ${effConfidence(c)}${c.status!=="active"?` (${c.status})`:""} | ${String(c.statement).replace(/\|/g,"\\|").slice(0,150)} | ${links} |`);
+    }
+  }
+  L.push("");
+  L.push(`### Reading library`);
+  L.push("");
+  if (!db.sources.length) L.push("*No sources yet.*");
+  else {
+    L.push("| id | kind | title | url |");
+    L.push("|---|---|---|---|");
+    for (const s2 of db.sources) L.push(`| ${s2.id} | ${s2.kind} | ${String(s2.title).replace(/\|/g,"\\|").slice(0,90)} | ${s2.url||""} |`);
+  }
+  if (db.lists.length){
+    L.push("");
+    L.push(`### Reading lists`);
+    for (const l of db.lists) L.push(`- \`${l.id}\` **${l.title}** — ${(l.items||[]).map(i=>i.sourceId).join(", ")||"empty"}`);
+  }
+  L.push("");
+  L.push(`### Models in this workspace`);
+  L.push("");
+  L.push(db.models.length ? db.models.map(m=>`- \`${m.id}\` ${m.name}`).join("\n") : "*None.*");
+  L.push("");
+
+  L.push(`## 3. What you may propose`);
+  L.push("");
+  L.push(`Each operation calls one of these actions. Parameters are JSON Schema, generated from the application itself.`);
+  L.push("");
+  for (const [name, a] of Object.entries(ACTIONS)){
+    if (a.kind !== "mutate") continue;
+    L.push(`### \`${name}\``);
+    L.push("");
+    L.push(a.desc);
+    L.push("");
+    L.push("```json");
+    L.push(JSON.stringify(a.schema, null, 2));
+    L.push("```");
+    L.push("");
+  }
+  L.push(`Not available to you: reading actions (you have this briefing), \`run_model\` (a run record must come from a run that actually executed), deletions, and anything governing settings or the workspace itself.`);
+  L.push("");
+
+  L.push(`## 4. The changeset file to reply with`);
+  L.push("");
+  L.push("```json");
+  L.push(JSON.stringify({
+    lodestone: "changeset",
+    formatVersion: CHANGESET_FORMAT,
+    author: { name: "YOUR NAME", kind: "external-llm", model: "YOUR MODEL" },
+    target: { workspaceId: wsIndex.activeId, title: db.ws.title, question: db.ws.question, fingerprint: fp },
+    note: "one line describing what this changeset does",
+    ops: [
+      { action: "add_source", as: "$src1",
+        params: { kind:"web page", title:"…", author:"…", url:"https://…",
+                  accessed:"YYYY-MM-DD", excerpt:"verbatim passage you actually read", access:"open",
+                  notes:"why it matters here" } },
+      { action: "create_card", as: "$fact1",
+        params: { type:"fact", statement:"One sentence, with the number in it.",
+                  detail:"Caveats and what would change this.", confidence:"probable",
+                  tags:["example"], citations:[{ sourceId:"$src1", locator:"Table 3" }] } },
+      { action: "link_cards", params: { from:"$fact1", to:"AN-EXISTING-ID", rel:"supports" } }
+    ]
+  }, null, 2));
+  L.push("```");
+  L.push("");
+  L.push(`**References.** Use \`"as": "$label"\` to name something you create, then \`$label\` wherever an id is expected later. Refer to things already on the board by their real ids from §2. A label used before it is defined, or a real id that does not exist, rejects that operation.`);
+  L.push("");
+
+  L.push(`## 5. House rules`);
+  L.push("");
+  L.push(`- **Confidence discipline.** "established" needs multiple independent sources; a single source is at most "probable"; an active disagreement is "contested"; ungrounded is "unverified".`);
+  L.push(`- **Cite with a locator** — a page, table, section or query. A citation without one is not re-derivable.`);
+  L.push(`- **Web pages need a url, an accessed date, and a verbatim excerpt.** A link alone cannot survive the page changing.`);
+  L.push(`- **Record disagreement, do not resolve it.** Where two sources conflict, add both and link them \`conflicts-with\`.`);
+  L.push(`- **Never invent** an id, a source, a number, a url or an excerpt. If you could not ground something, propose an \`open_question\` card instead and say so.`);
+  L.push(`- **Link what you create.** An unconnected pile of facts is not an argument.`);
+  L.push(`- Set \`criteria\` only where a card genuinely bears on one of §1's criteria.`);
+  L.push("");
+  L.push(`Every operation you propose is reviewed by a person before it is committed.`);
+  return L.join("\n");
+}
+
+/* Import driver: snapshot, validate, report, apply. The report is shown before
+   anything is applied, because "12 ready, 3 rejected and here is why" is the
+   difference between a review and a leap of faith. */
+async function importChangeset(file, filename){
+  const report = validateChangeset(file);
+  if (!report.ok) {
+    openDlg(`<div class="dlg-head"><span>Changeset refused</span><button class="btn small" data-action="closeDlg">✕</button></div>
+      <div class="dlg-body"><p class="hint">${esc(filename||"")}</p>
+      ${report.errors.map(e=>`<div class="notice" style="border-left-color:var(--danger);background:var(--danger-soft);">${esc(e)}</div>`).join("")}</div>`);
+    return;
+  }
+  const auth = file.author || {};
+  const lines = report.ops.map(o => o.ok
+    ? `<div class="csop"><span>✓ ${esc(o.describe || o.action)}</span></div>`
+    : `<div class="csop" style="background:var(--danger-soft);"><span>✕ <b>${esc(o.action||"?")}</b> — ${esc(o.reason)}</span></div>`).join("");
+  const mode = (db.settings.approvalMode || "staged") === "staged" ? "staged for your review" : "applied immediately (your approval-mode setting)";
+  openDlg(`<div class="dlg-head"><span>Review changeset</span><button class="btn small" data-action="closeDlg">✕</button></div>
+    <div class="dlg-body">
+      <p class="hint">${esc(filename||"")} · from <b>${esc(auth.name||"unknown author")}</b>${auth.model?` (${esc(auth.model)})`:""}${file.note?` · ${esc(file.note)}`:""}</p>
+      ${report.warnings.map(w=>`<div class="notice">${esc(w)}</div>`).join("")}
+      <p><b>${report.ready} operation${report.ready===1?"":"s"} ready</b>${report.rejected?`, <b>${report.rejected} rejected</b>`:""}. Applying will be ${esc(mode)}. A backup is taken first.</p>
+      <div style="max-height:22rem; overflow-y:auto; margin:0.5rem 0;">${lines}</div>
+      <div style="display:flex; gap:0.5rem;">
+        <button class="btn primary" data-action="csImportApply" ${report.ready?"":"disabled"}>Apply ${report.ready} operation${report.ready===1?"":"s"}</button>
+        <button class="btn" data-action="closeDlg">Cancel</button>
+      </div>
+    </div>`);
+  pendingImport = { file, report, filename };
+}
+let pendingImport = null;
+
+async function runPendingImport(){
+  if(!pendingImport) return;
+  const { file, report, filename } = pendingImport;
+  pendingImport = null;
+  closeDlg();
+  const snap = await backupWorkspace("before-changeset");
+  if(!snap){ toast("Backup failed — nothing was applied"); return; }
+  const res = await applyChangeset(file, report);
+  render();
+  toast(`${res.applied} operation${res.applied===1?"":"s"} applied from ${filename||"changeset"}${res.failed.length?` · ${res.failed.length} failed`:""} · backup ${snap}`);
+}
+
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal
 // tool folding all its parameters into the first one as pseudo-XML). Strip
@@ -1224,6 +1567,7 @@ document.addEventListener("click", (ev) => {
                if (node) { node.scrollIntoView({ block: "center", behavior: "smooth" }); node.classList.add("flash"); setTimeout(() => node.classList.remove("flash"), 1400); } }
     else if (sid) { view = "library"; render(); }
   }
+  else if (a === "csImportApply") { runPendingImport(); }
   else if (a === "aWebToggle") {
     db.settings.webTools = !db.settings.webTools; save(); render();
     toast(db.settings.webTools ? "Web access on — page content is untrusted data" : "Web access off");

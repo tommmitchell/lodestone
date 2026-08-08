@@ -1737,6 +1737,14 @@ function viewSettings(){
     <p class="hint" style="margin-top:0.6rem;">Registered actors: ${actors().map(a=>`${actorRef(a.id)}<span class="conf-note"> ${esc(a.kind)}${a.model?` · ${esc(a.model)}`:""}</span>`).join(" · ")}</p>
   </div>
   <div class="panel">
+    <h3>Work with an outside assistant</h3>
+    <p class="hint">Export a briefing, hand it to any assistant — Claude, GPT, or a person — and import the changeset it returns. Every proposed edit is validated and reviewed here before it is committed, exactly like an edit made in the app. The briefing is plain markdown and JSON Schema, so it is not specific to any provider.</p>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <button class="btn primary" data-action="dlBriefing">Export briefing (.md)</button>
+      <label class="btn" style="display:inline-block;">Import changeset (.json)<input type="file" id="importChangesetFile" accept=".json,application/json" style="display:none;"></label>
+    </div>
+  </div>
+  <div class="panel">
     <h3>Backups <span class="conf-note">${backupList.length} saved</span></h3>
     <p class="hint">A backup is a full copy of this workspace. One is taken automatically before an import, and you can take one any time. Restoring replaces everything in the workspace — including anything done since the snapshot — so it takes a backup of the current state first.</p>
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.6rem;">
@@ -1756,7 +1764,7 @@ function viewSettings(){
     <p class="hint">All data lives in this browser's local storage (prototype; FR-G audit trail and multi-user are backend features). Export before clearing your browser data.</p>
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
       <button class="btn" data-action="dlJson">Export workspace (.json)</button>
-      <label class="btn" style="display:inline-block;">Import workspace (.json)<input type="file" id="importFile" accept=".json,application/json" style="display:none;"></label>
+      <label class="btn" style="display:inline-block;">Import workspace or changeset (.json)<input type="file" id="importFile" accept=".json,application/json" style="display:none;"></label>
       <button class="btn danger" data-action="resetSeed">Reset to seeded demo workspace</button>
     </div>
   </div>
@@ -2247,6 +2255,11 @@ document.addEventListener("click", ev=>{
     view = "settings"; render();
     if(!backupList.length) refreshBackups();     // outside render(), so nothing live is detached
   }
+  else if(a==="dlBriefing"){
+    if(typeof buildBriefing !== "function"){ toast("Requires the local deployment"); return; }
+    const slug = db.ws.title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40);
+    offerDownload(`lodestone-briefing-${slug||"workspace"}.md`, buildBriefing());
+  }
   else if(a==="backupNow"){
     backupWorkspace("manual").then(f=>{ if(f){ toast(`Backed up as ${f}`); refreshBackups(); } });
   }
@@ -2325,13 +2338,21 @@ document.addEventListener("keydown", ev=>{
   if(ev.key==="Enter" && ev.target.id==="analystQ"){ runSearch(); }
 });
 document.addEventListener("change", ev=>{
-  if(ev.target.id==="importFile"){
+  if(ev.target.id==="importFile" || ev.target.id==="importChangesetFile"){
     const f = ev.target.files[0]; if(!f) return;
     const reader = new FileReader();
     reader.onload = async () => {
       try {
         const data = JSON.parse(reader.result);
-        if(!data.cards || !data.sources || !data.ws) throw new Error("not a LODESTONE workspace");
+        // Two file kinds arrive here: a whole workspace, or a changeset of
+        // incremental edits from an assistant working outside the app.
+        if(data && data.lodestone === "changeset"){
+          if(typeof importChangeset !== "function"){ toast("Changeset import needs the local deployment"); ev.target.value=""; return; }
+          await importChangeset(data, f.name);
+          ev.target.value = "";
+          return;
+        }
+        if(!data.cards || !data.sources || !data.ws) throw new Error("not a LODESTONE workspace or changeset");
         // Snapshot before any sweeping change. Import currently creates a NEW
         // workspace so the open one is untouched, but the backup costs nothing
         // and covers imports that apply in place (external changesets).

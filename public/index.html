@@ -2089,14 +2089,33 @@ function buildBiblio(){
   return md;
 }
 async function offerDownload(filename, data){
+  // Three paths, in order of fidelity. The published artifact is sandboxed and
+  // saves through its host; an ordinary browser (which is what the local
+  // deployment is) can just download a Blob. Clipboard is the last resort and
+  // was previously the ONLY fallback, so every export on localhost quietly
+  // became a copy-to-clipboard.
   if(window.claude && window.claude.downloads){
     try { await window.claude.downloads.save({filename, data}); toast("Saved: " + filename); return; }
     catch(e){
       if(e && e.code==="declined"){ toast("Save declined"); return; }
       if(e && e.code==="rate_limited"){ toast("A save prompt is already open — try again shortly"); return; }
-      /* fall through to clipboard on unavailable/etc. */
+      /* fall through */
     }
   }
+  try {
+    const ext = (filename.split(".").pop()||"").toLowerCase();
+    const mime = ext==="json" ? "application/json"
+               : ext==="md"   ? "text/markdown"
+               : ext==="csv"  ? "text/csv" : "text/plain";
+    const url = URL.createObjectURL(new Blob([data], {type: mime + ";charset=utf-8"}));
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    // Revoke late: revoking immediately can cancel the download in some browsers.
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    toast("Downloaded: " + filename);
+    return;
+  } catch(e){ /* fall through to clipboard */ }
   try { await navigator.clipboard.writeText(data); toast("Download unavailable here — copied to clipboard instead"); }
   catch(e){ toast("Could not save or copy — select text from the preview and copy manually"); }
 }

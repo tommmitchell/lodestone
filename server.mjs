@@ -49,6 +49,7 @@ const SESSION_STARTED = new Date();
 const SESSION_DATE = SESSION_STARTED.toISOString().slice(0, 10);
 const LOG_DIR = path.join(here, "conversations");
 const BACKUP_DIR = path.join(here, "backups");
+const BRIEFING_DIR = path.join(here, "briefings");
 const LOG_PATH = path.join(LOG_DIR, `lodestone-${SESSION_DATE}.md`);
 let logHeaderWritten = false;
 
@@ -965,6 +966,30 @@ const server = http.createServer(async (req, res) => {
   /* Backups. LODESTONE has no undo, so a snapshot before anything sweeping —
      and on demand — is the whole safety net. Whole-workspace by design: a
      snapshot cannot half-restore the way a computed inverse can. */
+  if (req.method === "POST" && url.pathname === "/api/briefing") {
+    let raw = "";
+    req.setEncoding("utf8");
+    for await (const chunk of req) { raw += chunk; if (raw.length > 8_000_000) break; }
+    try {
+      const body = JSON.parse(raw || "{}");
+      if (typeof body.text !== "string" || !body.text) throw new Error("No briefing text supplied.");
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(BRIEFING_DIR, { recursive: true });
+      const slug = String(body.title || "workspace").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "workspace";
+      const d = new Date();
+      const name = `${slug}-${d.toISOString().slice(0,10)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}.md`;
+      await writeFile(path.join(BRIEFING_DIR, name), body.text, "utf8");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, file: name, dir: "briefings" }));
+    } catch (e) {
+      console.error("[briefing] failed:", e.message);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/backup") {
     let raw = "";
     req.setEncoding("utf8");

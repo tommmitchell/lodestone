@@ -13,6 +13,7 @@ conversations/
 
 # Workspace backups — full copies of the evidence.
 backups/
+briefings/
 
 # Evidence content. The tool is public; the analysis is not.
 # Start from public/seed.example.js.

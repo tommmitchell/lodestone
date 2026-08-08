@@ -570,8 +570,11 @@ function catalogEntry(id){ return modelCatalog().find(m=>m.id===id); }
    is why they are timestamped and restoring is a deliberate act. */
 async function backupWorkspace(reason){
   try {
+    // Stamp the originating workspace id into the snapshot. Titles can be
+    // renamed; the id is what makes "is this the same workspace?" answerable.
+    const stamped = Object.assign({}, db, { _workspaceId: wsIndex.activeId, _backupOf: db.ws.title });
     const r = await fetch("api/backup", { method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({ title: db.ws.title, reason: reason||"manual", workspace: db }) });
+      body: JSON.stringify({ title: db.ws.title, reason: reason||"manual", workspace: stamped }) });
     const d = await r.json();
     if(!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
     return d.file;
@@ -597,24 +600,64 @@ async function restoreWorkspace(file){
 
   const from = `“${data.ws.title}” · ${data.cards.length} card${data.cards.length===1?"":"s"}, ${(data.sources||[]).length} source${(data.sources||[]).length===1?"":"s"}`;
   const to = `“${db.ws.title}” · ${db.cards.length} card${db.cards.length===1?"":"s"}, ${db.sources.length} source${db.sources.length===1?"":"s"}`;
-  const different = data.ws.title !== db.ws.title;
+
+  /* A restore replaces a workspace with an earlier version OF ITSELF. Dropping
+     a different workspace into this slot is not a restore, it is a silent
+     substitution — the slot keeps its place in the switcher while its contents
+     and name change underneath. Refused. Identity is the recorded id where the
+     snapshot has one; older snapshots predate the stamp, so the title is the
+     fallback. */
+  const sameWorkspace = data._workspaceId
+    ? data._workspaceId === wsIndex.activeId
+    : data.ws.title === db.ws.title;
+
+  if(!sameWorkspace){
+    const asNew = confirm(
+      `That snapshot is of a different workspace.\n\n`
+      + `  Snapshot:   ${from}\n`
+      + `  This slot:  ${to}\n\n`
+      + `Restoring it here would replace “${db.ws.title}” entirely, so it is not allowed — a restore returns a workspace to an earlier version of itself.\n\n`
+      + `Open it as a NEW workspace instead? Nothing here is touched.`);
+    if(asNew) restoreAsNewWorkspace(data, file);
+    return;
+  }
+
   if(!confirm(
-    `Restore from ${file}?\n\n`
-    + `This slot currently holds:\n  ${to}\n\n`
-    + `It will be replaced by:\n  ${from}\n\n`
-    + (different ? `NOTE: that snapshot is of a DIFFERENT workspace. Restoring it here replaces this one entirely.\n\n` : "")
+    `Restore “${db.ws.title}” from ${file}?\n\n`
+    + `Currently:      ${to}\n`
+    + `After restore:  ${from}\n\n`
     + `Anything done since the snapshot is lost. A backup of the current state is taken first, so this is itself undoable.`)) return;
 
   const safety = await backupWorkspace("before-restore");
   if(!safety) return;                       // refuse to restore if we could not snapshot first
   try {
     db = data;
+    delete db._workspaceId; delete db._backupOf;
     ensureLlmActors(db); applySeedAdditions(db);
     saveWorkspace(); touchIndex();
     if(typeof aResetForWorkspace === "function") aResetForWorkspace();
     view="board"; filters={type:"all",q:"",tag:""}; briefSel=null; render();
     toast(`Restored from ${file} · previous state saved as ${safety}`);
   } catch(e){ toast(`Restore failed: ${e.message}`); }
+}
+
+/* The non-destructive alternative when a snapshot belongs elsewhere: open it
+   in its own slot rather than over the top of something else. */
+function restoreAsNewWorkspace(data, file){
+  try {
+    if(db) save();
+    const id = "w" + (Date.now().toString(36));
+    db = data;
+    delete db._workspaceId; delete db._backupOf;      // it is its own workspace now
+    ensureLlmActors(db); applySeedAdditions(db);
+    wsIndex.list.push({ id, title: db.ws.title, question: db.ws.question, updated: today(),
+                        cards: db.cards.length, sources: db.sources.length });
+    wsIndex.activeId = id;
+    saveWorkspace(); writeIndex();
+    if(typeof aResetForWorkspace === "function") aResetForWorkspace();
+    view="board"; filters={type:"all",q:"",tag:""}; briefSel=null; render();
+    toast(`Opened ${file} as a new workspace: “${db.ws.title}”`);
+  } catch(e){ toast(`Could not open that snapshot: ${e.message}`); }
 }
 
 let backupList = [];

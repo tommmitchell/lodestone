@@ -197,6 +197,13 @@ const PARITY_MAP = {
   aWebToggle: "exception:governance", csGoto: "ui-only",
   csImportApply: "exception:governance", dlBriefing: "exception:export",
 
+  // Backups are the user's safety net. An assistant that could snapshot at
+  // will would only add noise, and one that could restore could quietly undo
+  // the user's own work — restoring is destructive in the same sense deleting
+  // is. Listing them is a read of the interface, not of the workspace.
+  backupNow: "exception:governance", restoreBackup: "exception:destructive",
+  refreshBackups: "ui-only",
+
   // documented exceptions (spec section 1.2) — withheld on purpose
   dlJson: "exception:export", dlMemo: "exception:export", dlBiblio: "exception:export",
   resetSeed: "exception:destructive", saveWs: "exception:governance",

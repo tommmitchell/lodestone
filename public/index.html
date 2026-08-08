@@ -582,14 +582,32 @@ async function backupWorkspace(reason){
 }
 
 async function restoreWorkspace(file){
-  if(!confirm(`Restore this workspace from ${file}?\n\nEverything currently in “${db.ws.title}” is replaced, including anything done since that snapshot. A backup of the current state is taken first, so this is itself undoable.`)) return;
+  // Read and validate BEFORE asking, so the confirmation can name what is
+  // arriving as well as what is going — the backup list is not filtered by
+  // workspace, so restoring one workspace's snapshot over another is possible
+  // and should never be a surprise. Also avoids taking a safety snapshot for a
+  // restore the user then cancels.
+  let data;
+  try {
+    const r = await fetch("api/backup/"+encodeURIComponent(file), {cache:"no-store"});
+    data = await r.json();
+    if(data.error) throw new Error(data.error);
+    if(!data.ws || !Array.isArray(data.cards)) throw new Error("That file is not a workspace snapshot.");
+  } catch(e){ toast(`Restore failed: ${e.message}`); return; }
+
+  const from = `“${data.ws.title}” · ${data.cards.length} card${data.cards.length===1?"":"s"}, ${(data.sources||[]).length} source${(data.sources||[]).length===1?"":"s"}`;
+  const to = `“${db.ws.title}” · ${db.cards.length} card${db.cards.length===1?"":"s"}, ${db.sources.length} source${db.sources.length===1?"":"s"}`;
+  const different = data.ws.title !== db.ws.title;
+  if(!confirm(
+    `Restore from ${file}?\n\n`
+    + `This slot currently holds:\n  ${to}\n\n`
+    + `It will be replaced by:\n  ${from}\n\n`
+    + (different ? `NOTE: that snapshot is of a DIFFERENT workspace. Restoring it here replaces this one entirely.\n\n` : "")
+    + `Anything done since the snapshot is lost. A backup of the current state is taken first, so this is itself undoable.`)) return;
+
   const safety = await backupWorkspace("before-restore");
   if(!safety) return;                       // refuse to restore if we could not snapshot first
   try {
-    const r = await fetch("api/backup/"+encodeURIComponent(file), {cache:"no-store"});
-    const data = await r.json();
-    if(data.error) throw new Error(data.error);
-    if(!data.ws || !Array.isArray(data.cards)) throw new Error("That file is not a workspace snapshot.");
     db = data;
     ensureLlmActors(db); applySeedAdditions(db);
     saveWorkspace(); touchIndex();

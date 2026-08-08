@@ -1,0 +1,135 @@
+{
+  "lodestone": "changeset",
+  "formatVersion": 1,
+  "author": { "name": "Claude Code", "kind": "external-llm", "model": "claude-opus-5" },
+  "target": {
+    "workspaceId": "wmsjfkbm7",
+    "title": "Florida flu forecasting",
+    "question": "What internet data is available that can help forecast flu and COVID levels in Florida?",
+    "fingerprint": "c0-s1-r0"
+  },
+  "note": "Hospitalisation reporting lag: how late Florida hospital admission data is, how much it is revised after publication, and how completely Florida hospitals report",
+
+  "ops": [
+    { "action": "add_source", "as": "$delphi",
+      "params": {
+        "kind": "web page",
+        "title": "NHSN Respiratory Hospitalizations — signal documentation",
+        "author": "Delphi Group, Carnegie Mellon University",
+        "url": "https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/nhsn.html",
+        "accessed": "2026-08-08",
+        "access": "open",
+        "excerpt": "For preliminary signals, this results in a reporting lag of 4 days from the end of the reference week. For finalized signals, this results in a reporting lag of 6-7 days from the end of the reference week. Preliminary signals are currently updated weekly, on Wednesday. Finalized signals are currently updated weekly, generally on Friday or Saturday. In practice, revisions tend to happen within 2 months of the initial release; older data is unlikely to be revised. Of values reported recently (reference date 2 months or less before the issue date), 20% were revisions. Revisions tend to be small, with a median 2% (mean 5.4%) difference between highest and lowest values seen for a given reference date.",
+        "notes": "Quantifies both the publication lag and the backfill behaviour of NHSN hospital admissions, the series CDC FluSight forecasts against. Machine-readable via the Delphi Epidata API, which also serves the as-of vintages needed to avoid training on revised data."
+      } },
+
+    { "action": "add_source", "as": "$flusight",
+      "params": {
+        "kind": "web page",
+        "title": "Forecasts of Flu Hospital Admissions — FluSight, current week",
+        "author": "US Centers for Disease Control and Prevention",
+        "url": "https://www.cdc.gov/flu-forecasting/data-vis/current-week.html",
+        "accessed": "2026-08-08",
+        "access": "open",
+        "excerpt": "The following jurisdictions had <80% of hospitals reporting for the most recent week: Alabama, Alaska, Arkansas, California, District of Columbia, Florida, Georgia, Hawaii, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Mississippi, Missouri, Montana, Nebraska, Nevada, New Mexico, New York, Oklahoma, Oregon, Puerto Rico, South Dakota, Texas, US, Vermont, Virginia, Washington and Wyoming. Lower reporting rates could impact forecast validity.",
+        "notes": "CDC's own completeness caveat on the NHSN series. Note the list runs to roughly 33 jurisdictions and includes the US aggregate, so this is a nationwide reporting shortfall rather than a Florida-specific one."
+      } },
+
+    { "action": "add_source", "as": "$flReview",
+      "params": {
+        "kind": "web page",
+        "title": "Florida Flu Review, Season 2025-26, Week 29 (2026)",
+        "author": "Florida Department of Health, Bureau of Epidemiology",
+        "url": "https://www.floridahealth.gov/wp-content/uploads/2026/07/fl-flu-review-week-29-2026.pdf",
+        "accessed": "2026-08-08",
+        "access": "open",
+        "excerpt": "Data are provisional and subject to change. Figure 3: Percent of patients with ILI reported by ILINet providers didn't change from previous 3-week average. Figures below show flu and ILI visit data from emergency departments participating in ESSENCE-FL.",
+        "notes": "A representative weekly issue. Eight pages of charts as a PDF, not a data file — extractable by an LLM but not directly loadable as a series. Its own text states the data are provisional."
+      } },
+
+    { "action": "create_card", "as": "$lag",
+      "params": {
+        "type": "fact",
+        "statement": "Florida hospital admission data reaches forecasters 4 days after the reference week closes in preliminary form, and 6-7 days after it in finalised form.",
+        "detail": "Hospitals report to NHSN weekly; the preliminary signal publishes on Wednesday and the finalised signal on Friday or Saturday. A forecast produced on any given day is therefore working from a week that ended at least four days earlier, before any nowcasting of the current week.",
+        "confidence": "probable",
+        "tags": ["hospitalisation", "latency", "nhsn"],
+        "citations": [ { "sourceId": "$delphi", "locator": "Reporting lag and update schedule" } ],
+        "criteria": [0, 1]
+      } },
+
+    { "action": "create_card", "as": "$backfill",
+      "params": {
+        "type": "fact",
+        "statement": "About 20% of recently reported NHSN values are later revised, with revisions continuing for roughly two months and a median 2% (mean 5.4%) difference between the highest and lowest value seen for a given week.",
+        "detail": "Revision magnitude varies sharply by state — Texas was revised roughly seven times as often as California over the period analysed — so a figure derived for one state does not transfer to another. Florida's own revision behaviour is not stated and would have to be measured.",
+        "confidence": "probable",
+        "tags": ["hospitalisation", "backfill", "nhsn"],
+        "citations": [ { "sourceId": "$delphi", "locator": "Backfill and revision behaviour" } ],
+        "criteria": [0, 1]
+      } },
+
+    { "action": "create_card", "as": "$completeness",
+      "params": {
+        "type": "fact",
+        "statement": "Florida is among the jurisdictions with under 80% of hospitals reporting to NHSN in the most recent week, and CDC states that lower reporting rates could affect forecast validity.",
+        "detail": "The caveat is not specific to Florida: the same list names roughly 33 jurisdictions and includes the US aggregate itself, so this is a nationwide reporting shortfall that Florida shares rather than a Florida-specific failure. CDC does not publish the per-state percentage on this page, only membership of the under-80% group.",
+        "confidence": "probable",
+        "tags": ["hospitalisation", "completeness", "nhsn"],
+        "citations": [ { "sourceId": "$flusight", "locator": "Data notes, NHSN hospital reporting" } ],
+        "criteria": [0]
+      } },
+
+    { "action": "create_card", "as": "$flPdf",
+      "params": {
+        "type": "fact",
+        "statement": "Florida's own weekly surveillance publication, the Florida Flu Review, is a PDF of charts issued weekly from October to May and fortnightly over the summer, and states on its face that the data are provisional and subject to change.",
+        "detail": "It draws on ILINet sentinel providers and ESSENCE-FL emergency-department syndromic data. As a chart PDF rather than a data file it suits extraction by a language model but cannot be loaded directly as a time series, and the fortnightly summer cadence doubles the effective lag out of season.",
+        "confidence": "probable",
+        "tags": ["florida", "fdoh", "pdf"],
+        "citations": [
+          { "sourceId": "$flReview", "locator": "Week 29 2026 issue, header note and figure 3" },
+          { "sourceId": "s-103", "locator": "Weekly Florida Flu Review archive" }
+        ],
+        "criteria": [0, 2]
+      } },
+
+    { "action": "create_card", "as": "$risk",
+      "params": {
+        "type": "risk",
+        "statement": "A model trained or scored on the latest published hospitalisation figures will be fitting numbers that are still moving, and will look more accurate in development than it proves in use.",
+        "detail": "Both the publication lag and the two-month revision window bite in the same direction: the most recent weeks are the least settled and the most heavily weighted by a forecaster. Guarding against it means training and back-testing on as-of vintages — the data as it stood at the time — rather than on the current fully-revised series.",
+        "confidence": "probable",
+        "tags": ["hospitalisation", "methodology"],
+        "citations": [ { "sourceId": "$delphi", "locator": "Backfill and revision behaviour" } ],
+        "criteria": [0, 1]
+      } },
+
+    { "action": "link_cards", "params": { "from": "$risk", "to": "$lag", "rel": "depends-on" } },
+    { "action": "link_cards", "params": { "from": "$risk", "to": "$backfill", "rel": "depends-on" } },
+    { "action": "link_cards", "params": { "from": "$completeness", "to": "$risk", "rel": "informs" } },
+
+    { "action": "create_card", "as": "$oqRate",
+      "params": {
+        "type": "open_question",
+        "statement": "What percentage of Florida hospitals actually report to NHSN each week, and is it rising or falling?",
+        "detail": "CDC publishes only membership of the under-80% group, not the figure. Without the series it is impossible to tell whether Florida is at 79% or far lower, or whether completeness is improving — and that determines how much the admissions series can be trusted as a forecast target.",
+        "confidence": "unverified",
+        "tags": ["hospitalisation", "completeness"],
+        "criteria": [0]
+      } },
+
+    { "action": "create_card", "as": "$oqCsv",
+      "params": {
+        "type": "open_question",
+        "statement": "Does any source publish Florida hospital admissions as a machine-readable historical series, or is the state-level record only reconstructable from NHSN via an API?",
+        "detail": "The Florida Flu Review is chart PDFs. NHSN data is available through the Delphi Epidata API with as-of vintages, which would satisfy the historical-series criterion, but whether FDOH itself offers a downloadable series has not been checked.",
+        "confidence": "unverified",
+        "tags": ["florida", "data-access"],
+        "criteria": [1, 2]
+      } },
+
+    { "action": "link_cards", "params": { "from": "$oqRate", "to": "$completeness", "rel": "depends-on" } },
+    { "action": "link_cards", "params": { "from": "$oqCsv", "to": "$flPdf", "rel": "depends-on" } }
+  ]
+}

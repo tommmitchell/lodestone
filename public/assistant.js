@@ -1318,6 +1318,8 @@ function buildBriefing(){
   L.push("");
   L.push(`Workspace id \`${wsIndex.activeId}\` · fingerprint \`${fp}\` · ${db.cards.length} cards, ${db.sources.length} sources, ${db.runs.length} runs.`);
   L.push("");
+  L.push(`*Exported ${new Date().toISOString().slice(0,16).replace("T"," ")}. If the board has changed since, the import will say so — the fingerprint above is checked.*`);
+  L.push("");
 
   L.push(`## 2. What is already on the board`);
   L.push("");

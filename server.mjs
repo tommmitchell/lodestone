@@ -979,9 +979,18 @@ const server = http.createServer(async (req, res) => {
         .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "workspace";
       const d = new Date();
       const name = `${slug}-${d.toISOString().slice(0,10)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}.md`;
+      // Three names for one briefing, so an assistant never has to guess which
+      // file is meant:
+      //   <slug>-<timestamp>.md   the archive — every export kept
+      //   <slug>-latest.md        newest for THIS workspace
+      //   latest.md               newest overall, which is what "export then
+      //                           ask the agent" almost always means
       await writeFile(path.join(BRIEFING_DIR, name), body.text, "utf8");
+      await writeFile(path.join(BRIEFING_DIR, `${slug}-latest.md`), body.text, "utf8");
+      await writeFile(path.join(BRIEFING_DIR, "latest.md"), body.text, "utf8");
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, file: name, dir: "briefings" }));
+      res.end(JSON.stringify({ ok: true, file: name, latest: "latest.md",
+                               workspaceLatest: `${slug}-latest.md`, dir: "briefings" }));
     } catch (e) {
       console.error("[briefing] failed:", e.message);
       res.writeHead(500, { "content-type": "application/json" });

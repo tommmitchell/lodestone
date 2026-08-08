@@ -1740,7 +1740,7 @@ function viewSettings(){
   <div class="panel">
     <h3>Work with an outside assistant</h3>
     <p class="hint">One method, whoever is doing the work: <b>export a briefing, get a changeset back, import it.</b> The briefing carries the decision question, everything on the board, and the exact actions and format to reply in — generated from this app, so it cannot go out of date. Every proposed edit is validated and reviewed here before it is committed.</p>
-    <p class="hint"><b>An assistant that can read this machine</b> (Claude Code in a terminal): the briefing is also saved to <code>lodestone/briefings/</code> — point it there, and have it write the changeset back into the project folder.<br>
+    <p class="hint"><b>An assistant that can read this machine</b> (Claude Code in a terminal): the briefing is also saved as <code>lodestone/briefings/latest.md</code> (and <code>&lt;workspace&gt;-latest.md</code>, alongside a timestamped archive of every export) — point it there, and have it write the changeset back into the project folder.<br>
     <b>An assistant in a chat window</b> (Claude, GPT, or a person): open the downloaded <code>.md</code>, paste it with your instruction, save the JSON it returns.</p>
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
       <button class="btn primary" data-action="dlBriefing">Export briefing (.md)</button>
@@ -2286,7 +2286,7 @@ document.addEventListener("click", ev=>{
     fetch("api/briefing", {method:"POST", headers:{"content-type":"application/json"},
                            body: JSON.stringify({title: db.ws.title, text})})
       .then(r=>r.json())
-      .then(d=>{ if(d.file) toast(`Briefing saved to lodestone/briefings/${d.file}`); })
+      .then(d=>{ if(d.file) toast(`Briefing saved · point an assistant at lodestone/briefings/latest.md`); })
       .catch(()=>{});
     offerDownload(`lodestone-briefing-${slug}.md`, text);
   }

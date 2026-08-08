@@ -79,7 +79,7 @@ let aChangeset = null;    // mirror of db.pendingChangeset for the current turn
    during an external changeset import, the file's author. One place to decide
    it, so no action has to know where it is being called from. */
 let authorOverride = null;
-function authoringActorId(){ return authorOverride || authoringActorId() || null; }
+function authoringActorId(){ return authorOverride || (assistantActor() || {}).id || null; }
 
 function loadChangeset() {
   aChangeset = (db.pendingChangeset && db.pendingChangeset.status === "staged" && (db.pendingChangeset.ops || []).length)
@@ -1357,11 +1357,44 @@ function buildBriefing(opts){
   L.push("");
   if (!db.cards.length) L.push("*No cards yet.*");
   else {
-    L.push("| id | type | confidence | statement | links |");
-    L.push("|---|---|---|---|---|");
+    // Scan view: enough to find a card and see how it is connected.
+    L.push("| id | type | confidence | statement | cites | links |");
+    L.push("|---|---|---|---|---|---|");
     for (const c of db.cards){
       const links = (c.links||[]).map(l=>`${l.rel}→${l.to}`).join(", ");
-      L.push(`| ${c.id} | ${c.type} | ${effConfidence(c)}${c.status!=="active"?` (${c.status})`:""} | ${String(c.statement).replace(/\|/g,"\\|").slice(0,150)} | ${links} |`);
+      const cites = (c.citations||[]).map(x=>x.sourceId).join(", ") || "—";
+      L.push(`| ${c.id} | ${c.type} | ${effConfidence(c)}${c.status!=="active"?` (${c.status})`:""} | ${String(c.statement).replace(/\|/g,"\\|").slice(0,150)} | ${cites} | ${links} |`);
+    }
+    // Full view: the statement in full, its caveats, and the exact locator
+    // behind each citation. Without this a claim cannot be checked against the
+    // thing it was drawn from, which makes a justification audit impossible.
+    L.push("");
+    L.push(`### Every card in full, with its justification`);
+    L.push("");
+    for (const c of db.cards){
+      L.push(`**${c.id}** · ${c.type} · ${effConfidence(c)}${c.status!=="active"?` · ${c.status}`:""}`);
+      L.push("");
+      L.push(`> ${String(c.statement).split("\n").join(" ")}`);
+      if (c.detail) { L.push(""); L.push(String(c.detail).split("\n").join(" ")); }
+      if ((c.citations||[]).length){
+        L.push("");
+        L.push(`Cites:`);
+        for (const x of c.citations){
+          const src = source(x.sourceId);
+          L.push(`- \`${x.sourceId}\`${src?` — ${src.title}`:" — **does not resolve**"}${x.locator?`, at: *${x.locator}*`:" — **no locator**"}`);
+        }
+      } else if (NEEDS_SOURCE.includes(c.type)) {
+        L.push("");
+        L.push(`Cites: **nothing** — this card type is expected to carry a citation.`);
+      }
+      if ((c.links||[]).length){
+        L.push("");
+        L.push(`Links: ${(c.links||[]).map(l=>`${l.rel} → ${l.to}`).join(" · ")}`);
+      }
+      if ((c.criteria||[]).length){
+        L.push(`Bears on criteria: ${(c.criteria||[]).map(i=>`${i} (${db.ws.criteria[i]||"?"})`).join("; ")}`);
+      }
+      L.push("");
     }
   }
   L.push("");
@@ -1372,6 +1405,18 @@ function buildBriefing(opts){
     L.push("| id | kind | title | url |");
     L.push("|---|---|---|---|");
     for (const s2 of db.sources) L.push(`| ${s2.id} | ${s2.kind} | ${String(s2.title).replace(/\|/g,"\\|").slice(0,90)} | ${s2.url||""} |`);
+    // The excerpt is what a claim is checked against — a citation without the
+    // captured text cannot be audited, only taken on trust.
+    L.push("");
+    L.push(`#### What each source actually says`);
+    L.push("");
+    for (const s2 of db.sources){
+      L.push(`**${s2.id}** — ${s2.title}${s2.accessed?` *(read ${s2.accessed})*`:""}`);
+      L.push("");
+      L.push(s2.excerpt ? `> ${String(s2.excerpt).split("\n").join(" ")}` : `> *No excerpt captured. Any claim citing this source cannot be checked against what it said.*`);
+      if (s2.notes) { L.push(""); L.push(`Note: ${s2.notes}`); }
+      L.push("");
+    }
   }
   if (db.lists.length){
     L.push("");

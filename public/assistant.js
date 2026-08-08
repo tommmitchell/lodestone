@@ -66,7 +66,7 @@ function cardFull(c) {
    In `staged` mode ops apply to db immediately but are flagged pending, so
    the assistant can see its own work and the user watches edits land live —
    then Accept clears the flags or Reject runs the inverses. In `apply` mode
-   ops land unflagged and the journal keeps inverses for Revert. Either way
+   ops land unflagged; undo is by restoring a backup, not per-op. Either way
    the inverse is computed at execution time, when the prior state is known.
    ========================================================================= */
 /* The changeset must be as durable as the edits it governs. Holding it only in
@@ -992,7 +992,7 @@ function csDrawerHTML() {
       <button class="btn small primary" data-action="csAcceptAll">Accept all</button>
       <button class="btn small" data-action="csAcceptSel">Accept selected</button>
       <button class="btn small danger" data-action="csReject">Reject</button>
-    </div>` : `<div class="conf-note" style="padding:0.35rem 0.5rem;">Applied directly (approval mode: apply). Revert from the journal.</div>`}
+    </div>` : `<div class="conf-note" style="padding:0.35rem 0.5rem;">Applied directly (approval mode: apply). To undo, restore a backup from Settings &amp; data.</div>`}
   </div>`;
 }
 

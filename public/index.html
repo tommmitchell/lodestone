@@ -1553,7 +1553,7 @@ function journalPanelHTML(){
   }).join("");
   return `<div class="panel">
     <h3>Change journal <span class="conf-note">${j.length} entr${j.length===1?"y":"ies"}, newest first</span></h3>
-    <p class="hint">Every edit is credited to whoever made it — human or LLM. Assistant changesets record which human accepted them; direct edits are marked <i>direct</i>. Retained for the last 50 changes and included in the workspace export.</p>
+    <p class="hint">Every edit is credited to whoever made it — human or LLM. Assistant changesets record which human accepted them; direct edits are marked <i>direct</i>. Retained for the last 50 changes and included in the workspace export.<br><b>This is a record, not an undo.</b> To reverse changes, restore a backup from Settings &amp; data.</p>
     <div class="gridwrap"><table class="grid"><thead><tr><th>Date</th><th>Actor</th><th>What</th><th>Ops</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -1728,11 +1728,12 @@ function viewSettings(){
     <p class="hint" style="margin:-0.2rem 0 0.6rem;">${serverCaps
       ? `Spent today: <b>$${(serverCaps.spentTodayUsd||0).toFixed(2)}</b> of $${(serverCaps.dailyLimitUsd||0).toFixed(2)} · current value comes from ${esc(serverCaps.limitSource||"the server")}. Saving here overrides <code>.env</code> from now on. A populate pass with web access on can cost $0.50–$1.00; ordinary questions are one to two cents.`
       : `Requires the local server — start it with <code>npm start</code>.`}</p>
-    <div class="frow"><label for="setApproval">Approval mode (applies to assistant edits — P2)</label>
+    <div class="frow"><label for="setApproval">Approval mode — how assistant edits are committed</label>
       <select id="setApproval">
         <option value="staged" ${db.settings.approvalMode==="staged"?"selected":""}>Staged — review before anything is committed</option>
-        <option value="apply" ${db.settings.approvalMode==="apply"?"selected":""}>Apply immediately — revertible from the journal</option>
+        <option value="apply" ${db.settings.approvalMode==="apply"?"selected":""}>Apply immediately — undo by restoring a backup</option>
       </select></div>
+    <p class="hint" style="margin:-0.2rem 0 0.6rem;">The <b>change journal</b> (in Audits &amp; health) is a <i>record</i>: who changed what, when, and which of it you accepted. It does not undo anything. <b>Backups</b> are the undo — a full snapshot you can restore, taken automatically before an import and whenever you ask.</p>
     <button class="btn primary" data-action="saveAsst">Save assistant settings</button>
     <p class="hint" style="margin-top:0.6rem;">Registered actors: ${actors().map(a=>`${actorRef(a.id)}<span class="conf-note"> ${esc(a.kind)}${a.model?` · ${esc(a.model)}`:""}</span>`).join(" · ")}</p>
   </div>

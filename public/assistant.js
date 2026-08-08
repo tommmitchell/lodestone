@@ -1330,7 +1330,8 @@ function buildBriefing(opts){
     L.push("");
     L.push(`> ${String(opts.request).split("\n").join("\n> ")}`);
     L.push("");
-    L.push(`**Write your changeset to \`lodestone/changesets/${opts.requestId}.json\`** — that exact path and filename. LODESTONE is watching for it and will collect it on its own; nothing needs to be uploaded. Include \`"requestId": "${opts.requestId}"\` at the top level so it is matched to this request.`);
+    const csDir = (serverCaps && serverCaps.paths && serverCaps.paths.changesets) || "lodestone/changesets";
+    L.push(`**Write your changeset to \`${csDir}/${opts.requestId}.json\`** — that exact path and filename. LODESTONE is watching for it and will collect it on its own; nothing needs to be uploaded. Include \`"requestId": "${opts.requestId}"\` at the top level so it is matched to this request.`);
     L.push("");
     L.push(`Declare yourself as the author exactly so, which is how the edits are attributed:`);
     L.push("");
@@ -1559,7 +1560,11 @@ async function prepareExternalRequest(request){
     aBusy = false; render(); return;
   }
 
-  const paste = `Read the briefing at lodestone/briefings/latest.md and follow the request made there.`;
+  // Absolute: the assistant may be run from any directory, and a relative path
+  // is only meaningful from the project's parent.
+  const briefingPath = (serverCaps && serverCaps.paths && serverCaps.paths.briefingLatest)
+    || (saved && saved.latestPath) || "lodestone/briefings/latest.md";
+  const paste = `Read the briefing at ${briefingPath} and follow the request made there.`;
   const entry = { role:"assistant", external:true, awaiting:true, requestId,
                   paste, briefingFile: saved.file, log:[], text:"" };
   aChat.push(entry);

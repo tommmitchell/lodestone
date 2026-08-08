@@ -1028,7 +1028,9 @@ const server = http.createServer(async (req, res) => {
       await writeFile(path.join(BRIEFING_DIR, "latest.md"), body.text, "utf8");
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, file: name, latest: "latest.md",
-                               workspaceLatest: `${slug}-latest.md`, dir: "briefings" }));
+                               workspaceLatest: `${slug}-latest.md`, dir: "briefings",
+                               latestPath: path.join(BRIEFING_DIR, "latest.md"),
+                               changesetDir: CHANGESET_DIR }));
     } catch (e) {
       console.error("[briefing] failed:", e.message);
       res.writeHead(500, { "content-type": "application/json" });
@@ -1198,6 +1200,15 @@ const server = http.createServer(async (req, res) => {
       limitSource,
       logFile: path.basename(LOG_PATH),
       backupDir: "backups",
+      // Absolute, because an external assistant may be run from anywhere and a
+      // relative path only makes sense from the project's parent directory.
+      paths: {
+        root: here,
+        briefings: BRIEFING_DIR,
+        briefingLatest: path.join(BRIEFING_DIR, "latest.md"),
+        changesets: CHANGESET_DIR,
+        backups: BACKUP_DIR,
+      },
       run: runnableModelIds(),
       ready: r.ready,
       reason: r.reason,

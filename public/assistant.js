@@ -953,6 +953,7 @@ async function aSend(prepared, task) {
   }
   aBusy = false;
   if (aChangeset && !aChangeset.ops.length) { aChangeset = null; db.pendingChangeset = null; save(); }
+  logExchange(q, entry, task);
   render();
   const el = document.getElementById("aInput");
   if (el) el.focus();
@@ -1069,6 +1070,36 @@ BUDGET FIRST: you have a limited number of tool rounds. Batch calls. Aim for a s
 If web access is off, do not guess from memory — say you need it switched on and stop.
 
 Then reply with what you built: how many sources and cards, what the evidence seems to say so far, and the biggest gaps you could not fill.`;
+
+/* Write the exchange to the session log. The record of how a conclusion was
+   reached is part of the evidence, and a browser tab is not a record — a
+   reload discards it. Fire-and-forget: a logging failure must never cost the
+   user their answer, but it is reported once so it is not silently lost. */
+let logWarned = false;
+function logExchange(userText, entry, task) {
+  if (db.settings && db.settings.logConversations === false) return;
+  const taskName = task === (typeof JUSTIFY_TASK !== "undefined" ? JUSTIFY_TASK : null) ? "Justify this card"
+    : task === (typeof CONCLUDE_TASK !== "undefined" ? CONCLUDE_TASK : null) ? "Form and justify a conclusion"
+    : task === (typeof REDTEAM_TASK !== "undefined" ? REDTEAM_TASK : null) ? "Red team"
+    : task === (typeof POPULATE_TASK !== "undefined" ? POPULATE_TASK : null) ? "Research and populate"
+    : null;
+  const body = {
+    workspace: db.ws.title, question: db.ws.question,
+    userActor: (activeActor() || {}).name || "User",
+    assistantActor: (assistantActor() || {}).name || "Assistant",
+    model: entry.model || assistantModel(),
+    user: userText,
+    assistant: entry.text,
+    task: taskName,
+    tools: (entry.log || []).map(l => `${l.name}${l.args ? " " + l.args : ""}${l.note ? " · " + l.note : ""}${l.bad ? " [error]" : ""}`),
+    changes: (aChangeset && aChangeset.ops || []).map(o => o.describe),
+    cost: entry.cost ? entry.cost.request_usd : null,
+    error: !!entry.error,
+  };
+  fetch("api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    .then(r => { if (!r.ok && !logWarned) { logWarned = true; toast("The conversation could not be written to the session log"); } })
+    .catch(() => { if (!logWarned) { logWarned = true; toast("The conversation could not be written to the session log"); } });
+}
 
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal

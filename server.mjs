@@ -38,6 +38,33 @@ const PRICES = {
 const LEDGER_PATH = path.join(here, ".spend.json");
 const CONFIG_PATH = path.join(here, ".config.json");
 
+/* ---------------------------------------------------------------------------
+   CONVERSATION LOG. The assistant's exchanges are part of the record of how a
+   conclusion was reached, so they are written to disk rather than living only
+   in a browser tab that a reload discards. One file per LODESTONE session,
+   named for the date the session began; restarting the server on the same day
+   appends to the same file under a fresh session header.
+   ------------------------------------------------------------------------ */
+const SESSION_STARTED = new Date();
+const SESSION_DATE = SESSION_STARTED.toISOString().slice(0, 10);
+const LOG_DIR = path.join(here, "conversations");
+const LOG_PATH = path.join(LOG_DIR, `lodestone-${SESSION_DATE}.md`);
+let logHeaderWritten = false;
+
+const two = (n) => String(n).padStart(2, "0");
+const clockOf = (d) => `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+
+async function appendLog(text) {
+  const { mkdir, appendFile } = await import("node:fs/promises");
+  await mkdir(LOG_DIR, { recursive: true });
+  if (!logHeaderWritten) {
+    logHeaderWritten = true;
+    await appendFile(LOG_PATH,
+      `\n\n---\n\n# LODESTONE session — ${SESSION_DATE} ${clockOf(SESSION_STARTED)}\n\n`, "utf8");
+  }
+  await appendFile(LOG_PATH, text, "utf8");
+}
+
 /* The daily cap is the user's to set, and only the user's — the assistant is
    forbidden from raising its own budget (spec section 1.2). Precedence:
    a value saved from the interface wins, because it is the most recent
@@ -934,6 +961,54 @@ const server = http.createServer(async (req, res) => {
 
   // Lets the page discover what this deployment can actually do. The published
   // artifact gets no response at all, so its UI honestly reports "local only".
+  if (req.method === "POST" && url.pathname === "/api/log") {
+    let raw = "";
+    req.setEncoding("utf8");
+    for await (const chunk of req) { raw += chunk; if (raw.length > 2_000_000) break; }
+    try {
+      const e = JSON.parse(raw || "{}");
+      const t = new Date();
+      // Leading blank line: a markdown heading needs one before it, or the
+      // next entry renders as part of the previous entry's text.
+      const lines = [""];
+      lines.push(`## ${clockOf(t)} · ${e.workspace || "(no workspace)"}`);
+      if (e.question) lines.push(`*Decision question: ${e.question}*`);
+      lines.push("");
+      lines.push(`**${e.userActor || "User"}:**`);
+      lines.push("");
+      lines.push(String(e.user || "").trim() || "(empty)");
+      lines.push("");
+      if (e.task) lines.push(`> Ran as the named task: **${e.task}**\n`);
+      if (Array.isArray(e.tools) && e.tools.length) {
+        lines.push("<details><summary>Actions taken (" + e.tools.length + ")</summary>");
+        lines.push("");
+        for (const x of e.tools) lines.push(`- \`${x}\``);
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+      }
+      lines.push(`**${e.assistantActor || "Assistant"}${e.model ? ` (${e.model})` : ""}:**`);
+      lines.push("");
+      lines.push(String(e.assistant || "").trim() || "(no reply)");
+      lines.push("");
+      if (Array.isArray(e.changes) && e.changes.length) {
+        lines.push(`> Proposed ${e.changes.length} change(s), staged for review:`);
+        for (const c of e.changes) lines.push(`> - ${c}`);
+        lines.push("");
+      }
+      if (e.cost != null) lines.push(`<sub>~$${Number(e.cost).toFixed(4)}${e.error ? " · ended in an error" : ""}</sub>`);
+      lines.push("");
+      await appendLog(lines.join("\n"));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, file: path.basename(LOG_PATH) }));
+    } catch (err) {
+      console.error("[log] could not append:", err.message);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Could not write the conversation log." }));
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/limit") {
     let raw = "";
     req.setEncoding("utf8");
@@ -961,6 +1036,7 @@ const server = http.createServer(async (req, res) => {
       dailyLimitUsd: DAILY_LIMIT_USD,
       spentTodayUsd: Math.round(todaySpend() * 10000) / 10000,
       limitSource,
+      logFile: path.basename(LOG_PATH),
       run: runnableModelIds(),
       ready: r.ready,
       reason: r.reason,
@@ -1022,6 +1098,7 @@ server.listen(PORT, () => {
   console.log(`LODESTONE running at http://localhost:${PORT}`);
   console.log(`Assistant models: claude-sonnet-5 (Q&A default), claude-opus-5 (red-team default)`);
   console.log(`Adapters — browser: ${browserAvailable() ? "ready (system Chrome)" : "no Chrome found"}; excel: ${excelAvailable() ? "ready" : "not found (workbooks read-only)"}; python: ${pythonReady(here, BINDINGS.m5 || {}) ? "ready (BLAST-Lite venv)" : "venv not set up"}`);
+  console.log(`Conversation log: conversations/${path.basename(LOG_PATH)}`);
   console.log(`Daily spend limit: $${DAILY_LIMIT_USD.toFixed(2)} (spent today: $${todaySpend().toFixed(2)})`);
   if (!process.env.MY_ANTHROPIC_KEY) {
     console.log(

@@ -303,7 +303,7 @@ const SEED_ADDITIONS = {
       {id:"LLM4",  kind:"llm",   name:"Red team",            model:"claude-opus-5"},
       {id:"seed",  kind:"system", name:"Seeded evidence"},
     ],
-    settings: { activeActor:"user1", assistantActor:"LLM3", approvalMode:"staged", maxToolRounds:12 }
+    settings: { activeActor:"user1", assistantActor:"LLM3", approvalMode:"staged", maxToolRounds:12, logConversations:true }
   },
   10: {
     // Model choice is no longer bound to a task. One LLM actor per model, and
@@ -1610,6 +1610,14 @@ function viewSettings(){
     <p class="hint" style="margin:-0.2rem 0 0.6rem;">With web access on, anything the assistant reads from a page is <b>untrusted data, not instructions</b>, and is outside this workspace until it is captured as a source. Web search and fetch are billed by Anthropic in addition to tokens.</p>
     <div class="frow"><label for="setRounds">Max tool rounds per chat request (1–16). Named tasks such as Justify may use up to 14.</label>
       <input type="number" id="setRounds" min="1" max="16" value="${esc(db.settings.maxToolRounds)}"></div>
+    <div class="frow"><label for="setLog">Conversation log</label>
+      <select id="setLog">
+        <option value="on" ${db.settings.logConversations===false?"":"selected"}>On — write every exchange to a dated file</option>
+        <option value="off" ${db.settings.logConversations===false?"selected":""}>Off — conversations are lost when the tab closes</option>
+      </select></div>
+    <p class="hint" style="margin:-0.2rem 0 0.6rem;">${serverCaps && serverCaps.logFile
+      ? `Writing to <code>lodestone/conversations/${esc(serverCaps.logFile)}</code> — user turns, assistant replies, the actions taken and any staged changes. The file is named for the date this session began and is gitignored, since it quotes workspace evidence.`
+      : `Requires the local server.`}</p>
     <div class="frow"><label for="setLimit">Daily spend cap (USD). Assistant calls are refused once the day's spend reaches it — <b>the assistant cannot raise this itself</b>.</label>
       <input type="number" id="setLimit" min="0" max="500" step="0.5" value="${serverCaps && serverCaps.dailyLimitUsd != null ? esc(serverCaps.dailyLimitUsd) : ""}" ${serverCaps ? "" : "disabled"}>
     </div>
@@ -2154,6 +2162,7 @@ document.addEventListener("click", ev=>{
     db.settings.webTools = document.getElementById("setWeb").value === "on";
     db.settings.approvalMode = document.getElementById("setApproval").value;
     db.settings.maxToolRounds = rounds;
+    db.settings.logConversations = document.getElementById("setLog").value !== "off";
     save();
     const limEl = document.getElementById("setLimit");
     const lim = limEl && limEl.value !== "" ? Number(limEl.value) : null;

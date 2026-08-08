@@ -8,6 +8,9 @@ node_modules/
 .spend.json
 .config.json
 
+# Assistant conversation logs — they quote workspace evidence verbatim.
+conversations/
+
 # Evidence content. The tool is public; the analysis is not.
 # Start from public/seed.example.js.
 public/seed.js

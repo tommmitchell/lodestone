@@ -1011,16 +1011,41 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/api/backup/")) {
-    // Basename only: a crafted path must not escape the backups directory.
-    const name = path.basename(decodeURIComponent(url.pathname.slice("/api/backup/".length)));
+    /* The servable set is defined by what is actually in the backups
+       directory, not by what the request looks like after cleaning. Sanitising
+       a path and hoping is the weak form of this; here a name is servable only
+       if it is a member of a set the server built itself. Three independent
+       checks, any one of which is sufficient — belt, braces and a second belt,
+       because the cost of being wrong is handing out .env. */
+    let requested;
+    try { requested = decodeURIComponent(url.pathname.slice("/api/backup/".length)); }
+    catch { requested = ""; }
+
+    const deny = (why) => {
+      console.error(`[backup] refused read of ${JSON.stringify(requested)} — ${why}`);
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "No such backup." }));
+    };
+
+    // (a) shape: exactly the names this server generates, nothing else
+    if (!/^[a-z0-9][a-z0-9-]{0,63}-\d{4}-\d{2}-\d{2}-\d{6}\.json$/.test(requested)) return void deny("name does not match the backup pattern");
+
+    // (b) membership: it must be in the directory listing
+    let names = [];
+    try { const { readdir } = await import("node:fs/promises"); names = await readdir(BACKUP_DIR); }
+    catch { return void deny("no backups directory"); }
+    if (!names.includes(requested)) return void deny("not present in the backups directory");
+
+    // (c) containment: the resolved path must sit inside BACKUP_DIR
+    const resolved = path.resolve(BACKUP_DIR, requested);
+    if (resolved !== path.join(BACKUP_DIR, requested) ||
+        !resolved.startsWith(BACKUP_DIR + path.sep)) return void deny("resolves outside the backups directory");
+
     try {
-      const data = await readFile(path.join(BACKUP_DIR, name), "utf8");
+      const data = await readFile(resolved, "utf8");
       res.writeHead(200, { "content-type": "application/json" });
       res.end(data);
-    } catch (e) {
-      res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: `No backup named ${name}` }));
-    }
+    } catch { deny("unreadable"); }
     return;
   }
 
@@ -1135,8 +1160,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" || req.method === "HEAD") {
     let file = url.pathname === "/" ? "/index.html" : url.pathname;
-    const resolved = path.normalize(path.join(PUBLIC_DIR, file));
-    if (!resolved.startsWith(PUBLIC_DIR)) {
+    // path.resolve collapses "..", and the comparison needs the separator:
+    // a bare startsWith(PUBLIC_DIR) also accepts a sibling like "public-x/".
+    const resolved = path.resolve(PUBLIC_DIR, "." + (file.startsWith("/") ? file : "/" + file));
+    if (resolved !== PUBLIC_DIR && !resolved.startsWith(PUBLIC_DIR + path.sep)) {
+      console.error(`[static] refused ${JSON.stringify(url.pathname)} — resolves outside public/`);
       res.writeHead(403).end();
       return;
     }

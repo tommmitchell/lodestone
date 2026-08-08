@@ -17,6 +17,10 @@ let aBusy = false;
 let aOpen = true;
 let aCtx = null;     // context chip: {kind:'card'|'model', id}
 let aConv = [];      // raw Claude-format messages (the real conversation)
+/* Server-side tools may allocate a container, and every later request in the
+   same conversation has to name it. It belongs to the conversation, so it is
+   cleared whenever the conversation is. */
+let aContainer = null;
 
 /* ============================================================================
    THE ACTIONS REGISTRY — parity made structural.
@@ -908,12 +912,14 @@ async function aSend(prepared, task) {
       const resp = await fetch("api/assistant", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ messages: aConv, tools: toolSchemas(), model, task,
-                               webTools: !!(db.settings && db.settings.webTools) }),
+                               webTools: !!(db.settings && db.settings.webTools),
+                               ...(aContainer ? { container: aContainer } : {}) }),
       });
       const data = await resp.json();
       if (!resp.ok) { entry.text = data.error || `Request failed (${resp.status})`; entry.error = true; break; }
 
       entry.model = data.model; entry.usage = data.usage; entry.cost = data.cost;
+      if (data.container) aContainer = data.container;
       const content = data.content || [];
       const toolUses = content.filter(b => b.type === "tool_use");
       const says = content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
@@ -1021,7 +1027,7 @@ Then reply with: the conclusion, the confidence you gave it and why, what would 
    exist, so the switch resets it — and any unreviewed changeset goes with the
    workspace it was made in, since it is stored there. */
 function aResetForWorkspace() {
-  aChat = []; aConv = []; aCtx = null;
+  aChat = []; aConv = []; aCtx = null; aContainer = null;
   loadChangeset();
 }
 
@@ -1168,7 +1174,7 @@ document.addEventListener("click", (ev) => {
   if (!el) return;
   const a = el.dataset.action;
   if (a === "aSend") aSend();
-  else if (a === "aClear") { aChat = []; aConv = []; render(); }
+  else if (a === "aClear") { aChat = []; aConv = []; aContainer = null; render(); }
   else if (a === "aToggle") { aOpen = !aOpen; render(); }
   else if (a === "aCtxClear") { aCtx = null; renderAssistant(); }
   else if (a === "csAcceptAll") csAccept(null);

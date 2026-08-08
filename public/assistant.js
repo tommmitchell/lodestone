@@ -194,6 +194,7 @@ const PARITY_MAP = {
   briefNone: "ui-only", genBrief: "ui-only",
   aSend: "ui-only", aClear: "ui-only", aToggle: "ui-only", aCtxClear: "ui-only",
   aJustify: "ui-only", aConclude: "ui-only", aRedTeam: "ui-only", aPopulate: "ui-only",
+  aCopyPaste: "ui-only", aStopWatch: "ui-only",
   aWebToggle: "exception:governance", csGoto: "ui-only",
   csImportApply: "exception:governance", dlBriefing: "exception:export",
 
@@ -890,6 +891,17 @@ async function aSend(prepared, task) {
 
   const who = assistantActor();
   const model = assistantModel();
+
+  // An external assistant cannot be called; Send becomes a handoff.
+  if (isExternalModel(model)) {
+    stopWatching();
+    aChat.push({ role:"user", text:q });
+    aBusy = true; if (input) input.value = ""; render();
+    const last = aChat[aChat.length-1];
+    await prepareExternalRequest(q);
+    const e2 = aChat[aChat.length-1]; if (e2) e2._request = q;
+    return;
+  }
   // A named task may need more rounds than a chat turn; the user's setting is
   // the floor, not a ceiling the task cannot ask past.
   const userRounds = Math.max(1, Math.min(16, (db.settings && db.settings.maxToolRounds) || 12));
@@ -1092,6 +1104,9 @@ Then reply with what you built: how many sources and cards, what the evidence se
 let logWarned = false;
 function logExchange(userText, entry, task) {
   if (db.settings && db.settings.logConversations === false) return;
+  // An external turn is logged by its content — what was asked, and what came
+  // back rendered as actions — not by which files carried it. The file names
+  // are transport; the exchange is the record.
   const taskName = task === (typeof JUSTIFY_TASK !== "undefined" ? JUSTIFY_TASK : null) ? "Justify this card"
     : task === (typeof CONCLUDE_TASK !== "undefined" ? CONCLUDE_TASK : null) ? "Form and justify a conclusion"
     : task === (typeof REDTEAM_TASK !== "undefined" ? REDTEAM_TASK : null) ? "Red team"
@@ -1108,6 +1123,7 @@ function logExchange(userText, entry, task) {
     tools: (entry.log || []).map(l => `${l.name}${l.args ? " " + l.args : ""}${l.note ? " · " + l.note : ""}${l.bad ? " [error]" : ""}`),
     changes: (aChangeset && aChangeset.ops || []).map(o => o.describe),
     cost: entry.cost ? entry.cost.request_usd : null,
+    changes: (entry.external ? (aChangeset && aChangeset.ops || []).map(o=>o.describe) : ((aChangeset && aChangeset.ops || []).map(o => o.describe))),
     error: !!entry.error,
   };
   fetch("api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -1285,7 +1301,8 @@ function registerExternalActor(author){
   const id = "ext:" + slug;
   db.actors = db.actors || [];
   if (!db.actors.some(a => a.id === id)) {
-    db.actors.push({ id, kind:"llm", name: `${author.name || slug} (external)`,
+    const base = String(author.name || slug);
+    db.actors.push({ id, kind:"llm", name: /\(external\)/i.test(base) ? base : `${base} (external)`,
                      model: author.model || "", external: true });
     save();
   }
@@ -1300,13 +1317,28 @@ function registerExternalActor(author){
    app will actually accept, and provider-neutral by construction — plain
    markdown and JSON Schema, no Anthropic or OpenAI concepts anywhere.
    ========================================================================= */
-function buildBriefing(){
+function buildBriefing(opts){
+  opts = opts || {};
   const fp = `c${db.cards.length}-s${db.sources.length}-r${db.runs.length}`;
   const L = [];
   L.push(`# LODESTONE briefing — ${db.ws.title}`);
   L.push("");
-  L.push(`You are proposing edits to an evidence workbench. Read this, then reply with a **changeset file** (§4) and nothing else.`);
+  L.push(`You are proposing edits to an evidence workbench. Read this, then write a **changeset file** (§4).`);
   L.push("");
+  if (opts.request) {
+    L.push(`## 0. What is being asked of you`);
+    L.push("");
+    L.push(`> ${String(opts.request).split("\n").join("\n> ")}`);
+    L.push("");
+    L.push(`**Write your changeset to \`lodestone/changesets/${opts.requestId}.json\`** — that exact path and filename. LODESTONE is watching for it and will collect it on its own; nothing needs to be uploaded. Include \`"requestId": "${opts.requestId}"\` at the top level so it is matched to this request.`);
+    L.push("");
+    L.push(`Declare yourself as the author exactly so, which is how the edits are attributed:`);
+    L.push("");
+    L.push("```json");
+    L.push(JSON.stringify({ name: opts.authorName || "External assistant", kind: "external-llm", model: opts.authorModel || "" }, null, 2));
+    L.push("```");
+    L.push("");
+  }
   L.push(`## 1. The question this workspace exists to answer`);
   L.push("");
   L.push(`**${db.ws.question || "(no decision question set)"}**`);
@@ -1453,6 +1485,96 @@ async function runPendingImport(){
   toast(`${res.applied} operation${res.applied===1?"":"s"} applied from ${filename||"changeset"}${res.failed.length?` · ${res.failed.length} failed`:""} · backup ${snap}`);
 }
 
+/* ============================================================================
+   EXTERNAL HANDOFF. Selecting an external assistant turns Send into: write the
+   request into a briefing, show one line to paste, then watch the inbox and
+   collect the reply. The user does the pasting; nothing else.
+   ========================================================================= */
+let aWatch = null;        // {requestId, timer, started, entry}
+
+function stopWatching(){
+  if (aWatch && aWatch.timer) clearInterval(aWatch.timer);
+  aWatch = null;
+}
+
+async function prepareExternalRequest(request){
+  const spec = modelSpec(assistantModel()) || {};
+  const requestId = "req-" + Date.now().toString(36);
+  const briefing = buildBriefing({ request, requestId,
+                                   authorName: spec.name, authorModel: spec.model });
+  let saved = null;
+  try {
+    const r = await fetch("api/briefing", { method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ title: db.ws.title, text: briefing }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    saved = d;
+  } catch(e){
+    aChat.push({ role:"assistant", text:`Could not write the briefing: ${e.message}`, error:true, external:true });
+    aBusy = false; render(); return;
+  }
+
+  const paste = `Read the briefing at lodestone/briefings/latest.md and follow the request made there.`;
+  const entry = { role:"assistant", external:true, awaiting:true, requestId,
+                  paste, briefingFile: saved.file, log:[], text:"" };
+  aChat.push(entry);
+  aBusy = false;
+  render();
+
+  // Watch the inbox. The agent writes one file; we look only for this request's
+  // token, so two outstanding requests cannot be confused for one another.
+  aWatch = { requestId, entry, started: Date.now(),
+    timer: setInterval(async () => {
+      try {
+        const r = await fetch(`api/changeset-inbox?id=${encodeURIComponent(requestId)}`, {cache:"no-store"});
+        const d = await r.json();
+        if (d.status === "ready") { stopWatching(); await collectExternalReply(entry, d.changeset); }
+        else if (d.status === "malformed") {
+          stopWatching();
+          entry.awaiting = false; entry.error = true;
+          entry.text = `The file at changesets/${requestId}.json is not a LODESTONE changeset. ${d.error||""}`;
+          render();
+        } else if (d.status === "writing") { entry.writing = true; render(); }
+        // 30 minutes is long enough for a research pass and short enough that a
+        // forgotten request does not poll forever.
+        if (aWatch && Date.now() - aWatch.started > 30*60*1000) {
+          stopWatching(); entry.awaiting = false;
+          entry.text = "Stopped waiting after 30 minutes. If the assistant has since written the file, send the request again or import the changeset from Settings.";
+          render();
+        }
+      } catch(e){ /* server momentarily unreachable; keep waiting */ }
+    }, 2000) };
+}
+
+async function collectExternalReply(entry, file){
+  entry.awaiting = false; entry.writing = false;
+  const report = validateChangeset(file);
+  if (!report.ok) {
+    entry.error = true;
+    entry.text = "The changeset could not be applied:\n" + report.errors.join("\n");
+    render(); logExchange(entry._request, entry, null); return;
+  }
+  const snap = await backupWorkspace("before-changeset");
+  if (!snap) { entry.error = true; entry.text = "Backup failed — nothing was applied."; render(); return; }
+  const res = await applyChangeset(file, report);
+
+  // Render what the external assistant did in exactly the format used for an
+  // in-app model's actions, because to the user it is the same kind of event.
+  entry.log = report.ops.filter(o=>o.ok).map(o => ({
+    name: o.action,
+    args: Object.entries(o.op.params||{}).filter(([k])=>["id","from","to","rel","type","sourceId","cardId","modelId","listId","title","confidence"].includes(k))
+            .map(([k,v])=>`${k}=${typeof v==="object"?JSON.stringify(v):String(v).slice(0,40)}`).join(" "),
+    note: "", bad: false
+  }));
+  report.ops.filter(o=>!o.ok).forEach(o => entry.log.push({ name:o.action||"?", args:"", note:o.reason, bad:true }));
+  entry.text = (file.note ? file.note + "\n\n" : "")
+    + `${res.applied} change${res.applied===1?"":"s"} proposed`
+    + (report.rejected ? `, ${report.rejected} rejected on validation` : "")
+    + `. Review them below.`;
+  render();
+  logExchange(entry._request, entry, null);
+}
+
 /* ---------------- Panel ---------------- */
 // Models occasionally emit tool-call syntax as prose (observed: a terminal
 // tool folding all its parameters into the first one as pseudo-XML). Strip
@@ -1476,11 +1598,26 @@ function linkifyRefs(text) {
 
 function aMsgHTML(m) {
   if (m.role === "user") return `<div class="amsg user"><span class="who">You</span><div>${esc(m.text)}</div></div>`;
+  if (m.external && (m.awaiting || m.paste)) {
+    const log = (m.log || []).length
+      ? `<div class="alog">${m.log.map(l => `<div class="${l.bad ? "bad" : "ok"}">→ ${esc(l.name)}${l.args ? " " + esc(l.args) : ""}${l.note ? ` · ${esc(l.note)}` : ""}</div>`).join("")}</div>` : "";
+    const status = m.awaiting
+      ? `<div style="margin-top:0.4rem;font-size:0.72rem;color:var(--copper);">${m.writing ? "The file is being written…" : "Waiting for the reply — LODESTONE is watching for it and will collect it automatically."}
+           <button class="btn small" data-action="aStopWatch">Stop waiting</button></div>`
+      : "";
+    return `<div class="amsg ${m.error?"err":"bot"}"><span class="who">${esc((assistantActor()||{}).name||"External")}</span>
+      <div style="font-size:0.76rem;color:var(--ink-2);margin-bottom:0.3rem;">Paste this into that assistant:</div>
+      <div style="display:flex;gap:0.3rem;align-items:flex-start;">
+        <code style="flex:1;font-size:0.72rem;background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:0.35rem 0.45rem;word-break:break-word;">${esc(m.paste||"")}</code>
+        <button class="btn small just" data-action="aCopyPaste" data-i="${aChat.indexOf(m)}">Copy</button>
+      </div>
+      ${status}${log}${m.text?`<div style="white-space:pre-wrap;margin-top:0.4rem;">${linkifyRefs(m.text)}</div>`:""}</div>`;
+  }
   const log = (m.log || []).length
     ? `<div class="alog">${m.log.map(l => `<div class="${l.bad ? "bad" : "ok"}">→ ${esc(l.name)}${l.args ? " " + esc(l.args) : ""}${l.note ? ` · ${esc(l.note)}` : ""}</div>`).join("")}</div>` : "";
   const gaps = (m.gaps || []).length
     ? `<div style="font-size:0.72rem;color:var(--copper);margin-top:0.35rem;"><b>Evidence gaps:</b> ${m.gaps.map(linkifyRefs).join(" · ")}</div>` : "";
-  const cost = m.cost ? ` · ~$${m.cost.request_usd.toFixed(3)} (today $${m.cost.today_usd.toFixed(2)} of $${m.cost.daily_limit_usd.toFixed(2)})` : "";
+  const cost = (m.cost && !m.external) ? ` · ~$${m.cost.request_usd.toFixed(3)} (today $${m.cost.today_usd.toFixed(2)} of $${m.cost.daily_limit_usd.toFixed(2)})` : "";
   const meta = m.error ? "" : `<div style="font-size:0.64rem;color:var(--ink-3);margin-top:0.3rem;">${esc(m.model || "")}${m.usage ? ` · ${m.usage.input_tokens} in / ${m.usage.output_tokens} out${m.usage.cache_read_input_tokens ? ` · ${m.usage.cache_read_input_tokens} cached` : ""}` : ""}${esc(cost)}</div>`;
   return `<div class="amsg ${m.error ? "err" : "bot"}"><span class="who">${esc((assistantActor() || {}).name || "Assistant")}</span>
     ${log}<div style="white-space:pre-wrap;">${linkifyRefs(m.text)}</div>${gaps}${meta}</div>`;
@@ -1532,9 +1669,9 @@ function renderAssistant() {
     ${csDrawerHTML()}
     <div class="arail-foot">
       ${noKey ? `<div class="notice" style="margin:0 0 0.45rem;font-size:0.72rem;">No <code>MY_ANTHROPIC_KEY</code> on the server, so the assistant cannot run. Set it in <code>lodestone/.env</code> and restart. Everything else in LODESTONE works without it.</div>` : ""}
-      <textarea id="aInput" placeholder="Ask, or instruct… (Enter to send, Shift+Enter for a new line)" ${aBusy ? "disabled" : ""}></textarea>
+      <textarea id="aInput" placeholder="${isExternalModel() ? `Describe the work for ${esc((assistantActor()||{}).name||"the assistant")} — a briefing is written and you paste one line` : "Ask, or instruct… (Enter to send, Shift+Enter for a new line)"}" ${aBusy ? "disabled" : ""}></textarea>
       <div style="display:flex;gap:0.4rem;margin-top:0.4rem;align-items:center;">
-        <button class="btn primary small" data-action="aSend" ${aBusy ? "disabled" : ""}>Send</button>
+        <button class="btn primary small" data-action="aSend" ${aBusy ? "disabled" : ""}>${isExternalModel() ? "Prepare briefing" : "Send"}</button>
         <button class="btn small" data-action="aPopulate" ${aBusy ? "disabled" : ""} title="Research the decision question on the web and populate the library and board">Populate</button>
       <button class="btn small" data-action="aRedTeam" ${aBusy ? "disabled" : ""} title="Adversarial pass over the board — runs on whichever model you have chosen">Red-team</button>
         <button class="btn small" data-action="aConclude" ${aBusy ? "disabled" : ""} title="Form a recommendation for the decision question and justify it">Conclude</button>
@@ -1577,6 +1714,13 @@ document.addEventListener("click", (ev) => {
     else if (sid) { view = "library"; render(); }
   }
   else if (a === "csImportApply") { runPendingImport(); }
+  else if (a === "aCopyPaste") {
+    const m = aChat[+el.dataset.i];
+    if (m && m.paste) navigator.clipboard.writeText(m.paste)
+      .then(()=>toast("Copied — paste it into the assistant"))
+      .catch(()=>toast("Could not copy; select the text instead"));
+  }
+  else if (a === "aStopWatch") { stopWatching(); const m=aChat[aChat.length-1]; if(m){ m.awaiting=false; m.text="Stopped waiting."; } render(); }
   else if (a === "aWebToggle") {
     db.settings.webTools = !db.settings.webTools; save(); render();
     toast(db.settings.webTools ? "Web access on — page content is untrusted data" : "Web access off");

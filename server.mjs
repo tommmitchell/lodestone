@@ -2,7 +2,7 @@
 // requests to the Claude API. Credentials never reach the browser.
 import http from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
@@ -50,6 +50,9 @@ const SESSION_DATE = SESSION_STARTED.toISOString().slice(0, 10);
 const LOG_DIR = path.join(here, "conversations");
 const BACKUP_DIR = path.join(here, "backups");
 const BRIEFING_DIR = path.join(here, "briefings");
+const CHANGESET_DIR = path.join(here, "changesets");
+// Created at start-up so an external agent always has somewhere to write.
+try { mkdirSync(CHANGESET_DIR, { recursive: true }); } catch {}
 const LOG_PATH = path.join(LOG_DIR, `lodestone-${SESSION_DATE}.md`);
 let logHeaderWritten = false;
 
@@ -966,6 +969,41 @@ const server = http.createServer(async (req, res) => {
   /* Backups. LODESTONE has no undo, so a snapshot before anything sweeping —
      and on demand — is the whole safety net. Whole-workspace by design: a
      snapshot cannot half-restore the way a computed inverse can. */
+  /* Inbox for an external agent's reply. The request carries a token, the
+     agent writes <token>.json, and only that token is looked for — "newest
+     file wins" would race two requests against each other. A half-written file
+     simply fails to parse and is reported as still arriving. */
+  if (req.method === "GET" && url.pathname === "/api/changeset-inbox") {
+    const id = url.searchParams.get("id") || "";
+    if (!/^req-[a-z0-9]{4,32}$/.test(id)) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Bad request id." }));
+      return;
+    }
+    try {
+      const raw = await readFile(path.join(CHANGESET_DIR, id + ".json"), "utf8");
+      let parsed;
+      try { parsed = JSON.parse(raw); }
+      catch { 
+        // Present but not yet valid JSON: the agent is still writing it.
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "writing", bytes: raw.length }));
+        return;
+      }
+      if (!parsed || parsed.lodestone !== "changeset") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "malformed", error: "File is not a LODESTONE changeset." }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ready", changeset: parsed }));
+    } catch {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "waiting" }));
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/briefing") {
     let raw = "";
     req.setEncoding("utf8");

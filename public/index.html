@@ -759,7 +759,14 @@ const ASSISTANT_MODELS = [
   { model:"claude-sonnet-5", name:"Claude Sonnet 5", provider:"anthropic" },
   { model:"claude-fable-5",  name:"Claude Fable 5",  provider:"anthropic" },
   { model:"claude-haiku-4-5",name:"Claude Haiku 4.5",provider:"anthropic" },
+  // Assistants LODESTONE cannot call. Selecting one turns Send into a handoff:
+  // the request is written into a briefing, the user pastes one line into that
+  // assistant, and the reply is collected from the inbox automatically.
+  { model:"external:claude-code", name:"Claude Code (external)", provider:"external" },
+  { model:"external:gpt",         name:"GPT (external)",         provider:"external" },
 ];
+function modelSpec(m){ return ASSISTANT_MODELS.find(x=>x.model===m); }
+function isExternalModel(m){ const x = modelSpec(m||assistantModel()); return !!x && x.provider === "external"; }
 function llmActorId(model){ return "llm:" + model; }
 // Ensure every known model has an actor, so attribution never dangles.
 function ensureLlmActors(target){

@@ -138,8 +138,12 @@ async function handleAgentTurn(body) {
   // back as server_tool_use / *_tool_result blocks, and are never dispatched
   // to the browser's action registry — so the loop needs no special case.
   if (body.webTools) {
-    tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 8 });
-    tools.push({ type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 });
+    // allowed_callers: ["direct"] is required by models without programmatic
+    // tool calling (Haiku 4.5 rejects the whole request with a 400 otherwise)
+    // and is harmless on models that do support it — the assistant only ever
+    // calls these directly, never from inside another tool.
+    tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 8, allowed_callers: ["direct"] });
+    tools.push({ type: "web_fetch_20260209", name: "web_fetch", max_uses: 8, allowed_callers: ["direct"] });
   }
   const task = typeof body.task === "string" && body.task.trim() ? body.task.trim().slice(0, 4000) : "";
 
@@ -209,6 +213,9 @@ function assistantError(e) {
     return { status: 502, json: { error: "Could not reach the Claude API — check your network connection." } };
   }
   if (e instanceof Anthropic.APIError) {
+    // An API error used to be returned to the browser and recorded nowhere,
+    // so a failing request left no trace for anyone to diagnose.
+    console.error(`[assistant] Claude API error ${e.status ?? "?"}: ${e.message}`);
     return { status: e.status ?? 500, json: { error: `Claude API error: ${e.message}` } };
   }
   console.error(e);

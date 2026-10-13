@@ -205,6 +205,10 @@
   .tnode { border-left:2px solid var(--good); padding:0.4rem 0 0.4rem 0.7rem; margin:0.4rem 0; }
   .tnode .tnode { border-left-color:var(--copper); margin:0; padding-top:0; padding-bottom:0; }
   .tnode.against { border-left-color:var(--copper); padding:0; }
+  /* Direct evidence — the root card's own citations. Visually distinct from the
+     linked cards below it, because it is a different kind of support. */
+  .tnode.tdirect { border-left-color:var(--cobalt); background:var(--cobalt-soft); border-radius:0 6px 6px 0; padding:0.45rem 0.7rem; }
+  .tnode.tdirect .tsrc { margin-top:0.3rem; }
   .trel { font-size:0.62rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-3); font-weight:700; }
   .tsrc { font-size:0.7rem; color:var(--ink-2); margin-top:0.25rem; }
   .tflag { color:var(--copper); }
@@ -1076,9 +1080,17 @@ function openSource(sid){ openDlg(sourceHTML(sid)); }
 /* ---------------- Evidence trace (FR-C3/C4 audit for a single claim) ----------
    Walks the typed link graph beneath a card to assemble the case FOR it, the
    case AGAINST it, and the sources both rest on. Supporting relations:
-   the card "rests on" what it depends-on; other cards "support"/"inform"/
+   the card "depends on" what it depends-on; other cards "support"/"inform"/
    "answer" it. Opposing: anything conflicting with a node, plus risks and
-   unresolved open questions attached to any node.                          */
+   unresolved open questions attached to any node.
+
+   Note that depends-on is NOT evidence. It records what a claim is ABOUT or
+   presupposes — F-110 depends-on F-127 because it is a claim about the series
+   F-127 describes, not because F-127 gives any reason to believe it. Labelling
+   it "rests on" and filing it under the case for made a contextual link read as
+   support, which is why it is named for the relation itself now. What actually
+   establishes a fact is usually its own citations, and those are rendered
+   ahead of this tree — see traceHTML.                                      */
 const MAX_TRACE_DEPTH = 5;
 function traceGraph(rootId){
   const inCase = new Set([rootId]);
@@ -1089,7 +1101,7 @@ function traceGraph(rootId){
     const kids = [];
     (c.links||[]).forEach(l=>{
       const o = card(l.to);
-      if(o && o.status!=="deprecated" && l.rel==="depends-on") kids.push({id:l.to, rel:"rests on"});
+      if(o && o.status!=="deprecated" && l.rel==="depends-on") kids.push({id:l.to, rel:"depends on"});
     });
     db.cards.forEach(o=>{
       if(o.status==="deprecated" || o.id===id) return;
@@ -1174,7 +1186,7 @@ function inverseGraph(rootId){
     const parents = [];
     db.cards.forEach(o=>{
       if(o.status==="deprecated" || o.id===id) return;
-      (o.links||[]).forEach(l=>{ if(l.to===id && l.rel==="depends-on") parents.push({id:o.id, rel:"rests on this"}); });
+      (o.links||[]).forEach(l=>{ if(l.to===id && l.rel==="depends-on") parents.push({id:o.id, rel:"depends on this"}); });
     });
     (c.links||[]).forEach(l=>{
       const o = card(l.to); if(!o || o.status==="deprecated") return;
@@ -1227,13 +1239,52 @@ function traceCardLine(c, rel, depth){
   </div>`;
 }
 
+/* A locator missing on THIS card's citation does not by itself make the claim
+   un-re-derivable: another card may cite the same source with a locator, and
+   the Sources section below already displays those pins. Find one so the flag
+   can point at it instead of overclaiming. */
+function locatorElsewhere(sourceId, excludeCardId){
+  for(const c of db.cards){
+    if(c.id===excludeCardId || c.status==="deprecated") continue;
+    const hit = (c.citations||[]).find(x=>x.sourceId===sourceId && x.locator);
+    if(hit) return {cardId:c.id, locator:hit.locator};
+  }
+  return null;
+}
+
 function traceHTML(rootId){
   const root = card(rootId);
   if(!root) return `<div class="dlg-body">Card not found.</div>`;
   const g = traceGraph(rootId);
-  const forHTML = g.tree.length
+
+  /* A card's own citations come FIRST, because for a fact they usually are the
+     whole justification. The tree below is built from the link graph alone, so
+     without this the one thing that actually establishes a claim never appeared
+     in the section that claims to say why to believe it — it surfaced only at
+     the bottom, pooled across the whole case. */
+  /* Broken citations are NOT filtered out: sourceRef marks a missing source with
+     a visible ⚠, and a claim citing a source that is gone should look worse here,
+     not tidier. */
+  const rootCites = (root.citations||[]);
+  const rootCitesHTML = rootCites.length
+    ? `<div class="tnode tdirect">
+         <div class="card-top" style="margin-bottom:0.1rem;">
+           <span class="trel">${esc(root.id)} cites — direct evidence</span>
+           <span class="conf-note">${rootCites.length} source${rootCites.length===1?"":"s"}</span>
+         </div>
+         ${rootCites.map(x=>{
+           const pin = x.locator ? null : locatorElsewhere(x.sourceId, root.id);
+           const flag = x.locator ? ""
+             : pin ? ` <span class="tflag">— no locator here, but ${cardRef(pin.cardId)} pins this source at “${esc(pin.locator)}”</span>`
+                   : ` <span class="tflag">— no locator anywhere on the board, so nothing records where in this source to look</span>`;
+           return `<div class="tsrc">↳ ${sourceRef(x.sourceId, {full:true, locator:x.locator})}${flag}</div>`;
+         }).join("")}
+       </div>`
+    : `<div class="tnode tdirect"><div class="tsrc tflag">↳ ${esc(root.id)} cites no source of its own. Whatever appears below is context or corroboration from other cards, not direct evidence for this claim.</div></div>`;
+
+  const forHTML = rootCitesHTML + (g.tree.length
     ? g.tree.map(n=>traceCardLine(card(n.id), n.rel, n.depth+1)).join("")
-    : `<div class="empty">No supporting cards are linked yet. Link cards with <b>supports</b>, <b>informs</b>, or <b>depends-on</b> (Edit → Links) to build the case.</div>`;
+    : `<div class="empty">No supporting cards are linked yet. Link cards with <b>supports</b>, <b>informs</b>, or <b>depends-on</b> (Edit → Links) to build the case.</div>`);
   const againstHTML = g.against.length
     ? g.against.map(a=>`<div class="tnode against">${traceCardLine(card(a.id), a.why, 0)}</div>`).join("")
     : `<div class="empty">Nothing on the board currently contradicts or qualifies this case.</div>`;
@@ -1282,13 +1333,13 @@ function traceHTML(rootId){
         <button class="btn small" data-action="showOnBoard" data-id="${esc(root.id)}">Show this card on the board ↗</button>
       </div>
     </div>
-    <p class="hint" style="margin-top:0;">From the link graph: ${g.caseSize - 1} supporting card(s), ${g.against.length} challenge(s), ${inv.length} card(s) downstream, ${g.sources.length} source(s).</p>
+    <p class="hint" style="margin-top:0;">${rootCites.length} source(s) cited directly. From the link graph: ${g.caseSize - 1} supporting card(s), ${g.against.length} challenge(s), ${inv.length} card(s) downstream, ${g.sources.length} source(s) across the whole case.</p>
 
     <div class="tsec"><h4>${esc(CASE_FOR_HEADING[root.type] || "The case for")}</h4>${forHTML}</div>
     <div class="tsec"><h4>The case against &amp; open challenges</h4>${againstHTML}</div>
     <div class="tsec"><h4>Weakest links in this case</h4>${weakHTML}</div>
     <div class="tsec"><h4>If this is wrong, what breaks</h4>${invHTML}</div>
-    <div class="tsec"><h4>Sources this case rests on</h4>${srcHTML}</div>
+    <div class="tsec"><h4>Every source across this case</h4>${srcHTML}</div>
     <div class="tsec"><h4>Link this card</h4>
       <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
         <span class="ccode">${esc(root.id)}</span>
@@ -1296,7 +1347,7 @@ function traceHTML(rootId){
         <select id="lk-to" style="flex:1; min-width:12rem;">${linkOpts}</select>
         <button class="btn" data-action="addLinkFromTrace" data-id="${esc(root.id)}">Add link</button>
       </div>
-      <p class="hint" style="margin:0.4rem 0 0;">A trace is only as complete as the links. Use <b>depends-on</b> when this card rests on another; <b>supports</b> or <b>informs</b> when it feeds another; <b>conflicts-with</b> to record a disagreement.</p>
+      <p class="hint" style="margin:0.4rem 0 0;">A trace is only as complete as the links. Use <b>depends-on</b> when this card is a claim about, or presupposes, another — it records context, not evidence; <b>supports</b> or <b>informs</b> when it feeds another; <b>conflicts-with</b> to record a disagreement. Evidence for the claim itself is a <i>citation</i>, added from Edit → Sources.</p>
     </div>
   </div>
   <div class="dlg-foot">

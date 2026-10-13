@@ -30,6 +30,7 @@ const PORT = Number(process.env.PORT) || 8787;
 // input rate; 5-minute-TTL cache writes ~1.25x. Estimates are conservative
 // (Sonnet 5 intro pricing may bill lower than estimated here).
 const PRICES = {
+  "claude-fable-5-1": { input: 10, output: 50 },
   "claude-fable-5": { input: 10, output: 50 },
   "claude-opus-5": { input: 5, output: 25 },
   "claude-sonnet-5": { input: 3, output: 15 },
@@ -112,7 +113,7 @@ function estimateCost(model, u) {
 
 /* Model choice is the user's and is independent of the task. Roles ("red
    team") are prompt recipes, not model bindings. */
-const MODELS = new Set(["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
+const MODELS = new Set(["claude-fable-5-1", "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 
 // Auth comes exclusively from MY_ANTHROPIC_KEY (env or lodestone/.env).
 // Passing null when unset prevents the SDK's default ANTHROPIC_API_KEY fallback.

@@ -38,13 +38,14 @@ function cap(list, mapFn) {
 }
 function cardBrief(c) {
   return { id: c.id, type: c.type, statement: c.statement, confidence: effConfidence(c),
-           status: c.status, tags: c.tags, sources: c.citations.length };
+           status: c.status, tags: c.tags, criteria: c.criteria || [], sources: c.citations.length };
 }
 function cardFull(c) {
   return {
     id: c.id, type: c.type, statement: c.statement, detail: c.detail,
     confidence: effConfidence(c), declared_confidence: c.confidence, status: c.status,
-    tags: c.tags, criteria: (c.criteria || []).map(i => db.ws.criteria[i]).filter(Boolean),
+    tags: c.tags,
+    criteria: (c.criteria || []).map(i => ({ index: i, label: db.ws.criteria[i] ?? null })),
     citations: c.citations.map(x => {
       const s = source(x.sourceId);
       return { sourceId: x.sourceId, locator: x.locator, title: s ? s.title : null, resolves: !!s };
@@ -281,12 +282,31 @@ function parityAudit() {
            complete: !!uiActionSet };
 }
 
+/* Criteria are stored on a card as 0-based indices into db.ws.criteria —
+   positional, like the card form's checkboxes. The schema is static while the
+   criteria list is per-workspace, so the range is checked at run time and a
+   bad index is refused with the valid list, rather than silently dropped. */
+const CRITERIA_PARAM = { type: "array", items: { type: "integer" },
+  description: "Which of the workspace's decision criteria this card bears on, as 0-based indices into get_workspace's criteria list. Set only where the card genuinely bears on a criterion; [] clears." };
+function checkCriteria(list) {
+  if (list === undefined) return null;
+  if (!Array.isArray(list)) return "criteria must be an array of criterion indices.";
+  const n = db.ws.criteria.length;
+  const bad = list.filter(i => !Number.isInteger(i) || i < 0 || i >= n);
+  if (!bad.length) return null;
+  return n
+    ? `No criterion ${bad.join(", ")}. Valid indices: ${db.ws.criteria.map((c, i) => `${i} = ${c}`).join("; ")}.`
+    : "This workspace defines no decision criteria, so criteria must be empty.";
+}
+const normCriteria = (list) => [...new Set(list)].sort((a, b) => a - b);
+
 const ACTIONS = {
   get_workspace: {
     kind: "read",
     desc: "The decision question this workspace exists to answer, its title, and its decision criteria. Read this first when the task concerns the workspace as a whole.",
     schema: { type: "object", properties: {}, additionalProperties: false },
-    run: () => ({ title: db.ws.title, question: db.ws.question, criteria: db.ws.criteria,
+    run: () => ({ title: db.ws.title, question: db.ws.question,
+                  criteria: db.ws.criteria.map((label, index) => ({ index, label })),
                   counts: { cards: db.cards.length, sources: db.sources.length, runs: db.runs.length } }),
   },
 
@@ -476,6 +496,7 @@ const ACTIONS = {
       detail: { type: "string", description: "Caveats, method, what would change this" },
       confidence: { type: "string", enum: CONF },
       tags: { type: "array", items: { type: "string" } },
+      criteria: CRITERIA_PARAM,
       citations: { type: "array", items: { type: "object", properties: {
         sourceId: { type: "string" }, locator: { type: "string", description: "page, table, or query" } },
         required: ["sourceId"], additionalProperties: false } },
@@ -491,6 +512,8 @@ const ACTIONS = {
       if (badCite) return { error: `No source ${badCite.sourceId} in this workspace — add_source first, or cite an existing one. Never cite an id that does not exist.` };
       const badLink = (p.links || []).find(l => !card(l.to));
       if (badLink) return { error: `No card ${badLink.to} to link to.` };
+      const badCrit = checkCriteria(p.criteria);
+      if (badCrit) return { error: badCrit };
       const c = {
         id: uid(TYPES[p.type].prefix), type: p.type,
         statement: String(p.statement).slice(0, 600), detail: String(p.detail || ""),
@@ -498,7 +521,7 @@ const ACTIONS = {
         confidence: p.confidence, status: "active",
         citations: (p.citations || []).map(c2 => ({ sourceId: c2.sourceId, locator: String(c2.locator || "").slice(0, 140) })),
         links: (p.links || []).map(l => ({ to: l.to, rel: l.rel })),
-        criteria: [], owner: "", origin: "assistant",
+        criteria: normCriteria(p.criteria || []), owner: "", origin: "assistant",
         created: today(), updated: today(),
         createdBy: authoringActorId(), updatedBy: authoringActorId(),
       };
@@ -518,11 +541,14 @@ const ACTIONS = {
       confidence: { type: "string", enum: CONF },
       tags: { type: "array", items: { type: "string" } },
       status: { type: "string", enum: ["active", "investigating", "answered"] },
+      criteria: { ...CRITERIA_PARAM, description: CRITERIA_PARAM.description + " Replaces the card's whole list." },
       reason: { type: "string", description: "Why this change — shown to the user in review" },
     }, required: ["id"], additionalProperties: false },
     run: (p) => {
       const c = card(p.id);
       if (!c) return { error: `No card ${p.id}.` };
+      const badCrit = checkCriteria(p.criteria);
+      if (badCrit) return { error: badCrit };
       const before = JSON.parse(JSON.stringify(c));
       const changed = [];
       if (p.statement !== undefined) { c.statement = String(p.statement).slice(0, 600); changed.push("statement"); }
@@ -530,6 +556,7 @@ const ACTIONS = {
       if (p.confidence !== undefined) { c.confidence = p.confidence; changed.push(`confidence → ${p.confidence}`); }
       if (p.tags !== undefined) { c.tags = p.tags.map(t => String(t).toLowerCase().slice(0, 40)).slice(0, 8); changed.push("tags"); }
       if (p.status !== undefined) { c.status = p.status; changed.push(`status → ${p.status}`); }
+      if (p.criteria !== undefined) { c.criteria = normCriteria(p.criteria); changed.push(`criteria → [${c.criteria.join(", ")}]`); }
       if (!changed.length) return { error: "Nothing to change — pass at least one field." };
       c.updated = today(); c.updatedBy = authoringActorId();
       recordOp("update_card", p, { card: c.id }, { kind: "restoreCard", card: before },

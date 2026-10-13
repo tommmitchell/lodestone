@@ -138,6 +138,9 @@
   .card-detail { font-size:0.78rem; color:var(--ink-2); margin-top:0.3rem; }
   .card-meta { font-size:0.68rem; color:var(--ink-3); margin-top:0.45rem; display:flex; gap:0.9rem; flex-wrap:wrap; align-items:center; }
   .card-meta .src { color:var(--cobalt); }
+  /* Decision criteria a card bears on — styled apart from free-form tags,
+     because they are the workspace's fixed frame, not ad-hoc labels. */
+  .critpill { font-size:0.66rem; background:var(--cobalt-soft); color:var(--cobalt); border:1px solid var(--cobalt); border-radius:4px; padding:0.05rem 0.45rem; font-weight:600; display:inline-block; max-width:22rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
   .tagpill { font-size:0.64rem; background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:0.05rem 0.45rem; color:var(--ink-3); }
 
   table.grid { border-collapse:collapse; width:100%; font-size:0.8rem; background:var(--card); }
@@ -1328,6 +1331,7 @@ function traceHTML(rootId){
       <div class="card-body">${esc(root.statement)}</div>
       ${root.detail?`<div class="card-detail">${esc(root.detail)}</div>`:""}
       <div class="card-meta">
+        ${criteriaHTML(root)}
         ${root.tags.length?`<span>${root.tags.map(t=>`<span class="tagpill">${esc(t)}</span>`).join(" ")}</span>`:""}
         ${(root.links||[]).length?`<span>links: ${root.links.map(l=>`${esc(l.rel)} ${cardRef(l.to)}`).join(", ")}</span>`:""}
         <button class="btn small" data-action="showOnBoard" data-id="${esc(root.id)}">Show this card on the board ↗</button>
@@ -1409,6 +1413,20 @@ function renderRail(){
     item("settings","Settings & data","");
 }
 
+/* Criteria are positional indices into db.ws.criteria. An index past the end
+   (a criterion was deleted in Settings) renders as a visible broken reference
+   rather than vanishing, like a broken citation. */
+function criteriaHTML(c){
+  const list = c.criteria||[];
+  if(!list.length) return "";
+  return `<span>bears on: ${list.map(i=>{
+    const label = db.ws.criteria[i];
+    return label!==undefined
+      ? `<span class="critpill" title="Decision criterion ${i+1}: ${esc(label)}">${esc(label)}</span>`
+      : `<span class="critpill tflag" title="This card points at a criterion that no longer exists">⚠ criterion ${i+1} missing</span>`;
+  }).join(" ")}</span>`;
+}
+
 function cardHTML(c, opts){
   opts = opts||{};
   const conf = effConfidence(c);
@@ -1431,6 +1449,7 @@ function cardHTML(c, opts){
     <div class="card-meta">
       ${cites.length?`<span class="src">${cites.join(" · ")}</span>`:""}
       ${links.length?`<span>links: ${links.join(", ")}</span>`:""}
+      ${criteriaHTML(c)}
       ${c.tags.length?`<span>${c.tags.map(t=>`<span class="tagpill">${esc(t)}</span>`).join(" ")}</span>`:""}
       ${opts.noEdit?"":`<button class="btn small just" data-action="trace" data-id="${esc(c.id)}">Justification</button>
       ${typeof renderAssistant==="function"?`<button class="btn small" data-action="aJustify" data-id="${esc(c.id)}" title="Have the assistant build this card's justification: find support, record conflicts, cite sources">⚡ Justify</button>`:""}
